@@ -201,6 +201,11 @@ It refuses to run on a non-empty database; `--reset` wipes CRM data (keeping rea
 Demo users can't log in — they exist so the team views and reports have data. Sign in first, then run
 `--reset` if you also want records assigned to your own account.
 
+`python -m scripts.seed --clear` removes all CRM records and the demo users, leaving an empty CRM for
+your own data. Real accounts, their roles and the pipeline stages are kept.
+
+See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for how to enter your data and use each feature.
+
 ---
 
 ## API

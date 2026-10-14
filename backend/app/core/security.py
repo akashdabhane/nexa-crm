@@ -7,6 +7,9 @@ from app.core.config import settings
 
 SUPABASE_AUDIENCE = "authenticated"
 ASYMMETRIC_ALGORITHMS = {"RS256", "ES256"}
+# Tolerated clock difference (seconds) between this server and Supabase. Without it,
+# a freshly issued token is rejected ("not yet valid (iat)") when the local clock runs behind.
+CLOCK_SKEW_LEEWAY = 30
 
 _jwks_client: PyJWKClient | None = None
 
@@ -47,6 +50,7 @@ def decode_supabase_token(token: str) -> dict:
             key,
             algorithms=[algorithm],
             audience=SUPABASE_AUDIENCE,
+            leeway=CLOCK_SKEW_LEEWAY,
             options={"require": ["exp", "sub"]},
         )
     except (jwt.PyJWTError, jwt.PyJWKClientError) as exc:

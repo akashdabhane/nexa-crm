@@ -1,6 +1,7 @@
 import time
 import uuid
 
+from app.core.security import CLOCK_SKEW_LEEWAY
 from tests.conftest import auth_headers, make_token
 
 
@@ -19,9 +20,16 @@ def test_invalid_token_returns_401(client):
 
 
 def test_expired_token_returns_401(client):
-    token = make_token(uuid.uuid4(), exp=int(time.time()) - 10)
+    token = make_token(uuid.uuid4(), exp=int(time.time()) - CLOCK_SKEW_LEEWAY - 10)
     response = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
+
+
+def test_token_issued_slightly_in_the_future_is_accepted(client):
+    # Supabase's clock is a few seconds ahead of ours: a fresh token's iat is "in the future".
+    token = make_token(uuid.uuid4(), iat=int(time.time()) + 5)
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
 
 
 def test_wrong_audience_returns_401(client):

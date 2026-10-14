@@ -2,6 +2,7 @@
 
     python -m scripts.seed           # only if the CRM tables are empty
     python -m scripts.seed --reset   # wipe CRM data (keeps real user profiles) and reseed
+    python -m scripts.seed --clear   # wipe CRM data and demo users, leaving an empty CRM
 
 Demo users are placeholder profiles (they can't log in); they own records so
 dashboards and reports have a team to show. Your real Supabase account becomes
@@ -140,6 +141,14 @@ def reset(db) -> None:
     for model in (Notification, AuditLog, Note, Activity, Task, Lead, Deal, Contact, Company):
         db.execute(delete(model))
     db.execute(delete(Pipeline))
+
+
+def clear(db) -> None:
+    """Remove all CRM records and demo users. Real accounts and the pipeline setup are kept."""
+    for model in (Notification, AuditLog, Note, Activity, Task, Lead, Deal, Contact, Company):
+        db.execute(delete(model))
+    removed = db.execute(delete(Profile).where(Profile.email.like(f"%@{DEMO_DOMAIN}"))).rowcount
+    print(f"Cleared all CRM records and {removed} demo users. Real accounts and pipelines were kept.")
 
 
 def seed(db) -> None:
@@ -377,10 +386,16 @@ def seed(db) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--reset", action="store_true", help="delete existing CRM data before seeding")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--reset", action="store_true", help="delete existing CRM data before seeding")
+    mode.add_argument("--clear", action="store_true", help="delete CRM data and demo users without reseeding")
     args = parser.parse_args()
 
     with SessionLocal() as db:
+        if args.clear:
+            clear(db)
+            db.commit()
+            return
         if args.reset:
             reset(db)
         elif db.scalar(select(func.count()).select_from(Company)):
