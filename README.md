@@ -25,6 +25,7 @@ Alembic · PostgreSQL · Supabase Auth · Docker Compose
 | **Reports** | Lead conversion, sales pipeline, revenue by month, won vs lost, sales-rep performance, lead source performance — all with date filtering |
 | **Notifications** | In-app: lead/deal/task assigned to you, task due, deal won/lost. Bell with unread count |
 | **Audit log** | Who created, changed (field-level diff), converted, moved or deleted what, and when |
+| **AI assistant** | "AI Assistant" button in the top bar: describe calls, cold emails, new prospects and follow-ups in plain language and the assistant saves them as leads, contacts, companies, activities, notes and tasks (same permissions and audit trail as the UI). A LangGraph agent with LangChain tools; the model is chosen in `backend/.env`: `LLM_PROVIDER=gemini` (Google Gemini, needs `GEMINI_API_KEY`) or `LLM_PROVIDER=ollama` (local, e.g. `qwen3:4b`) |
 | **Auth & roles** | Supabase sign-up, login, email verification, password reset. Roles: Admin, Manager, Sales Rep |
 
 ### Roles

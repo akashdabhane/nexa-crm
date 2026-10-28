@@ -2,6 +2,7 @@
 
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { AssistantSheet } from "@/features/assistant/assistant-sheet";
 import { NotificationBell } from "@/features/notifications/notification-bell";
 
 export function Topbar() {
@@ -10,6 +11,7 @@ export function Topbar() {
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-4" />
       <div className="flex-1" />
+      <AssistantSheet />
       <NotificationBell />
     </header>
   );

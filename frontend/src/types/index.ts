@@ -336,3 +336,26 @@ export interface AuditLog {
   details: { name?: string; changes?: Record<string, [unknown, unknown]>; from?: string; to?: string; [key: string]: unknown };
   created_at: string;
 }
+
+// --- AI assistant -----------------------------------------------------------------
+
+export interface AssistantRecord {
+  type: "lead" | "contact" | "company" | "activity" | "note" | "task";
+  action: "created" | "updated";
+  id: string;
+  label: string;
+  /** The page to open: the record itself, or the record an activity/note was logged on. */
+  link_type: string | null;
+  link_id: string | null;
+}
+
+export interface AssistantMessage {
+  role: "user" | "assistant";
+  content: string;
+  records?: AssistantRecord[];
+}
+
+export interface AssistantReply {
+  reply: string;
+  records: AssistantRecord[];
+}

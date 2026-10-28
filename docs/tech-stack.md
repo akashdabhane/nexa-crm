@@ -46,6 +46,7 @@ SQLAlchemy 2.1) have APIs that differ from older tutorials.
 | DB driver | `psycopg[binary]` (psycopg 3) — URLs use `postgresql+psycopg://` | 3.3.6 |
 | JWT | `PyJWT[crypto]` (`PyJWKClient` for JWKS) + `cryptography` | 2.15.0 / 50.0.1 |
 | Env loading | `python-dotenv` (via pydantic-settings `.env`) | 1.2.3 |
+| AI assistant (`app/services/assistant/`) | `langgraph` (agent graph), `langchain` + `langchain-core` (tools, chat models), `langchain-google-genai` (Gemini), `langchain-ollama` (local models via Ollama) | 1.2.18 / 1.4.7 / 4.4.2 / 1.1.0 |
 | Tests | `pytest`, `httpx` (FastAPI `TestClient`) | 9.1.1 / 0.28.1 |
 
 ## Architecture summary

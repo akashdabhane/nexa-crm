@@ -15,3 +15,12 @@ def conflict(detail: str) -> HTTPException:
 
 def bad_request(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
+def bad_gateway(detail: str) -> HTTPException:
+    """An upstream service (e.g. the AI model) failed."""
+    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+
+def service_unavailable(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)

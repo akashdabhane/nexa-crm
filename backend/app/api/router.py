@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     activities,
+    assistant,
     audit_logs,
     companies,
     contacts,
@@ -33,6 +34,7 @@ ROUTERS = (
     reports,
     notifications,
     audit_logs,
+    assistant,
 )
 for module in ROUTERS:
     api_router.include_router(module.router)
