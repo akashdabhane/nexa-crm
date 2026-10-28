@@ -1,6 +1,7 @@
 # Contributing
 
-How humans and AI agents keep the code **and** its context documents correct.
+How humans and AI agents keep the code **and** its context documents correct. All context files live in `docs/`;
+`README.md` is at the repository root.
 
 ## The context files
 
@@ -15,7 +16,8 @@ How humans and AI agents keep the code **and** its context documents correct.
 | `rules.md` | Code style, structure, patterns, reasoning steps | A new convention or shared abstraction is introduced |
 | `contributing.md` | This process, git workflow | The workflow changes |
 | `README.md` | User-facing overview, setup, API summary | Features, setup steps or endpoints change |
-| `docs/ARCHITECTURE.md` | Detailed schema, ER diagram, design decisions | Schema or major design decisions change |
+| `docs/ARCHITECTURE.md` | Detailed schema, ER diagram, design decisions, AI assistant flow | Schema, major design decisions or the assistant's graph/tools change |
+| `docs/USER_GUIDE.md` | How end users set up and use each feature | A user-visible feature or workflow changes |
 
 **Rules for maintaining them**
 1. Update the docs **in the same change** as the code that makes them stale — never "later".
@@ -45,10 +47,11 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) going forward (
 ```
 
 - **Types:** `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `build`, `perf`, `style`.
-- **Scopes:** `backend`, `frontend`, `auth`, `contacts`, `companies`, `leads`, `deals`, `pipeline`, `activities`, `tasks`, `reports`, `notifications`, `audit`, `db`, `docker`, `docs`.
+- **Scopes:** `backend`, `frontend`, `auth`, `contacts`, `companies`, `leads`, `deals`, `pipeline`, `activities`, `tasks`, `reports`, `notifications`, `audit`, `assistant`, `db`, `docker`, `docs`.
 - Examples:
   - `feat(leads): carry lead notes over on conversion`
   - `fix(backend): add connect_timeout so DB outages fail fast`
+  - `feat(assistant): add a create_task tool`
   - `docs: update tech-stack for recharts 3`
 - One logical change per commit; migrations are committed together with the model change that needs them.
 - Commits created by an AI agent end with the attribution line the environment specifies (e.g. `Co-Authored-By: …`).
@@ -65,6 +68,6 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) going forward (
 
 ## Never commit
 
-`backend/.env`, `frontend/.env`, `frontend/.env.local`, any root `.env`, the Supabase JWT secret, database
-passwords, `backend/myvenv/`, `frontend/node_modules/`, `frontend/.next/`, `__pycache__/`, `.pytest_cache/`.
+`backend/.env`, `frontend/.env`, `frontend/.env.local`, any root `.env`, the Supabase JWT secret, the Gemini API key,
+database passwords, `backend/myvenv/`, `frontend/node_modules/`, `frontend/.next/`, `__pycache__/`, `.pytest_cache/`.
 All are covered by the `.gitignore` files — don't weaken them.

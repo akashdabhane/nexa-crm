@@ -9,10 +9,15 @@ checks below have been run and passed.
 
 | Variable | Required | Example / notes |
 |---|---|---|
-| `DATABASE_URL` | ✅ | `postgresql+psycopg://postgres:<password>@localhost:5432/nexa_crm` (local PostgreSQL 18). Must use the `postgresql+psycopg://` scheme. |
+| `DATABASE_URL` | ✅ | `postgresql+psycopg://postgres:<password>@localhost:5432/nexa_crm` (local PostgreSQL 18). `postgres://…` and `postgresql://…` are rewritten to `postgresql+psycopg://` by a validator in `app/core/config.py`. |
 | `SUPABASE_URL` | ✅ | `https://<ref>.supabase.co` — used to fetch the JWKS for RS256/ES256 tokens |
 | `SUPABASE_JWT_SECRET` | only for legacy HS256 projects | Supabase → Project Settings → API → JWT secret |
 | `CORS_ORIGINS` | optional | Comma-separated; default `http://localhost:3000` |
+| `LLM_PROVIDER` | optional | `gemini` (default) or `ollama` — the AI assistant's chat model |
+| `GEMINI_API_KEY` | for the assistant with Gemini | https://aistudio.google.com/apikey. Missing → `/api/assistant/chat` answers 503; the rest of the app works |
+| `GEMINI_MODEL` | optional | Default `gemini-3.5-flash-lite` (much larger free-tier daily quota than Flash) |
+| `GEMINI_FALLBACK_MODEL` | optional | Default `gemini-3.5-flash`; tried on rate-limit/overload/timeout errors. Empty disables it |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | optional | Default `http://localhost:11434` / `qwen3:4b` (run `ollama pull qwen3:4b` first) |
 | `TEST_DATABASE_URL` | optional | Defaults to `DATABASE_URL` with the DB name replaced by `nexa_crm_test` |
 
 Settings are loaded by `app/core/config.py` (pydantic-settings). **Process environment variables override `.env`**
@@ -45,7 +50,7 @@ cd backend
 myvenv\Scripts\activate                      # macOS/Linux: source myvenv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
-python -m scripts.seed                       # demo data; --reset wipes CRM data and reseeds
+# python -m scripts.seed                     # demo data, EMPTY databases only; --reset/--clear delete CRM data
 uvicorn app.main:app --reload                # http://localhost:8000 · docs at /docs
 
 # frontend
@@ -68,7 +73,7 @@ error within seconds; restart `uvicorn` after editing `.env` (the reloader only 
 
 | Layer | Tooling | Status |
 |---|---|---|
-| Backend API + business rules | `pytest` + FastAPI `TestClient` against **real PostgreSQL** (`nexa_crm_test`) | ✅ 71 tests in `backend/tests/` |
+| Backend API + business rules | `pytest` + FastAPI `TestClient` against **real PostgreSQL** (`nexa_crm_test`) | ✅ 84 tests in `backend/tests/` |
 | Frontend static checks | `tsc --noEmit` (strict), ESLint (next core-web-vitals + typescript, incl. React Compiler rules) | ✅ must be clean |
 | Frontend unit / component tests | — | ❌ not set up (don't add Jest/Vitest without asking) |
 | End-to-end | — | ❌ not set up (Playwright is the likely future choice; ask first) |
@@ -78,7 +83,8 @@ How the backend tests work (`backend/tests/conftest.py`):
 - The schema is created with `Base.metadata.create_all` once per session and dropped afterwards.
 - Each test runs inside a connection-level transaction with `join_transaction_mode="create_savepoint"` and is **rolled back**, so app code can `commit()` freely.
 - Tokens are **HS256-signed locally** with a test secret (`make_token`, `auth_headers`), so the real `get_current_user` dependency runs without Supabase. Fixtures: `admin`, `manager`, `rep`, `other_rep`.
-- Test files by area: `test_auth.py`, `test_companies_contacts.py`, `test_leads.py`, `test_deals.py`, `test_activities_tasks.py`, `test_reports.py`, `test_notifications_audit.py`.
+- Test files by area: `test_auth.py`, `test_companies_contacts.py`, `test_leads.py`, `test_deals.py`, `test_activities_tasks.py`, `test_reports.py`, `test_notifications_audit.py`, `test_config.py` (settings), `test_assistant.py` (AI assistant).
+- `test_assistant.py` replaces the chat model with `ScriptedModel` (monkeypatching `llm._gemini` / `llm._ollama`), which plays back scripted tool calls and replies. The real LangGraph graph, tools, permissions and DB writes run, but **no request goes to Gemini or Ollama**. Keep it that way for new assistant tests.
 
 Write a test for every new endpoint, business rule, permission rule or bug fix. Assert status codes **and** the
 resulting data.
@@ -104,7 +110,7 @@ Never edit a migration that has already been applied/committed — add a new one
 ## Dependency files
 
 - `frontend/package.json` + `package-lock.json`: install with `npm install <pkg>` (only when approved); commit both files.
-- `backend/requirements.txt`: currently a full `pip freeze` saved as **UTF-16** (PowerShell's `>` default). pip reads it, but git and GitHub diff it as binary. When regenerating, write UTF-8: `pip freeze | Out-File -Encoding utf8 requirements.txt` (PowerShell) or `pip freeze > requirements.txt` from Git Bash. Keep versions pinned (`==`).
+- `backend/requirements.txt`: currently a full `pip freeze` saved as **UTF-16** (PowerShell's `>` default), now including the LangChain/LangGraph packages and their transitive deps. pip reads it, but git and GitHub diff it as binary. When regenerating, write UTF-8: `pip freeze | Out-File -Encoding utf8 requirements.txt` (PowerShell) or `pip freeze > requirements.txt` from Git Bash. Keep versions pinned (`==`).
 
 ## Pre-delivery checklist
 
@@ -119,5 +125,6 @@ cd frontend && npm run build                           # succeeds
 - [ ] New/changed models have a reviewed Alembic migration, applied locally.
 - [ ] New endpoints have tests (happy path, validation 422/400, permission 403, not found 404 where relevant).
 - [ ] UI change exercised in the running app (desktop and ~375px mobile width), including loading, empty and error states.
+- [ ] Assistant changes: covered by `ScriptedModel` tests; any live chat check was run against `nexa_crm_test`, not the real database.
 - [ ] No secrets, `.env` files, `myvenv/`, `node_modules/`, `.next/` or `__pycache__/` staged.
 - [ ] Context `.md` files updated if the change affects them (see `contributing.md`).

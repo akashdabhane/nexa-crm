@@ -46,16 +46,18 @@ SQLAlchemy 2.1) have APIs that differ from older tutorials.
 | DB driver | `psycopg[binary]` (psycopg 3) — URLs use `postgresql+psycopg://` | 3.3.6 |
 | JWT | `PyJWT[crypto]` (`PyJWKClient` for JWKS) + `cryptography` | 2.15.0 / 50.0.1 |
 | Env loading | `python-dotenv` (via pydantic-settings `.env`) | 1.2.3 |
-| AI assistant (`app/services/assistant/`) | `langgraph` (agent graph), `langchain` + `langchain-core` (tools, chat models), `langchain-google-genai` (Gemini), `langchain-ollama` (local models via Ollama) | 1.2.18 / 1.4.7 / 4.4.2 / 1.1.0 |
+| AI assistant (`app/services/assistant/`) | `langgraph` (agent graph, `ToolNode`), `langchain` + `langchain-core` (tools, chat models), `langchain-google-genai` (Gemini, pulls in `google-genai`), `langchain-ollama` (+ `ollama` client) | 1.2.18 / 1.4.7 + 1.7.1 / 4.4.2 / 1.1.0 + 0.6.3 |
+| LLM providers | Google Gemini API (default `gemini-3.5-flash-lite`, fallback `gemini-3.5-flash`) or a local Ollama server (default `qwen3:4b`), chosen by `LLM_PROVIDER` | — |
 | Tests | `pytest`, `httpx` (FastAPI `TestClient`) | 9.1.1 / 0.28.1 |
 
 ## Architecture summary
 
 - **API style:** REST/JSON under `/api`, OpenAPI docs at `/docs`. Routers per feature in `backend/app/api/routes/`, registered in `backend/app/api/router.py` (`ROUTERS` tuple).
 - **Layers:** route (HTTP, deps, response models) → service (business rules: `permissions`, `leads`, `deals`, `pipelines`, `reports`, `audit`, `notifications`, `related`) → SQLAlchemy models. Pydantic schemas in `app/schemas/`.
+- **AI assistant:** `POST /api/assistant/chat` → `services/assistant/agent.py` (LangGraph `StateGraph`: `agent` node ⇄ `tools` node until the model answers) → `tools.py` (LangChain `@tool`s that call the existing route functions, so permissions/audit/notifications are shared) → `llm.py` (`build_chat_model`: Gemini with fallback, or Ollama). Stateless: the client sends the full conversation each time.
 - **Database:** PostgreSQL; UUID PKs; `created_at`/`updated_at` via `TimestampMixin`; enum-like columns as `VARCHAR` validated by Python `StrEnum`s (`app/models/enums.py`); `ARRAY(String)` for contact tags; `JSONB` for audit details; constraint naming convention in `app/db/base.py`.
 - **Auth:** Supabase Auth (hosted) issues JWTs → frontend stores the session in cookies (`@supabase/ssr`) → Axios adds `Authorization: Bearer` → FastAPI verifies and loads the `Profile`.
-- **Frontend state:** server state in TanStack Query (keys: `[resource, "list" | "detail", params]`, plus `"dashboard"`, `"timeline"`, `"board"`, `"notifications"`, `"me"`); list UI state in the URL (`useListState`); form state in React Hook Form; everything else is local `useState`. **No global client-state library.**
+- **Frontend state:** server state in TanStack Query (keys: `[resource, "list" | "detail", params]`, plus `"dashboard"`, `"timeline"`, `"board"`, `"notifications"`, `"me"`); list UI state in the URL (`useListState`); form state in React Hook Form; everything else is local `useState` (the assistant's conversation lives in `AssistantSheet` state, which stays mounted in the top bar). **No global client-state library.**
 - **Rendering:** route `page.tsx` files are thin server components; feature views are client components (`"use client"`) that fetch through TanStack Query. `src/proxy.ts` (Next 16's replacement for `middleware.ts`) refreshes the session and redirects.
 
 ## Commands at a glance
@@ -65,8 +67,9 @@ SQLAlchemy 2.1) have APIs that differ from older tutorials.
 | Backend dev server | `cd backend && myvenv\Scripts\activate && uvicorn app.main:app --reload` |
 | Frontend dev server | `cd frontend && npm run dev` |
 | Migrations | `cd backend && alembic upgrade head` |
-| Seed demo data | `cd backend && python -m scripts.seed [--reset]` |
+| Seed demo data (empty databases only; `nexa_crm` holds real data) | `cd backend && python -m scripts.seed [--reset \| --clear]` |
 | Backend tests | `cd backend && pytest` |
+| Local model for the assistant (optional) | `ollama pull qwen3:4b`, then `LLM_PROVIDER=ollama` in `backend/.env` |
 | Frontend checks | `cd frontend && npm run lint && npx tsc --noEmit && npm run build` |
 
 ## Forbidden / deprecated
@@ -93,3 +96,4 @@ Do not add these (ask the user first if you believe one is truly needed):
 | Celery, Redis, RQ, Kafka, APScheduler, Dramatiq | Deferred to the scalability phase |
 | SQLite (app or tests) | PostgreSQL (`nexa_crm`, `nexa_crm_test`) |
 | Supabase service-role key | Not needed anywhere |
+| Calling LLM SDKs (`google-genai`, `ollama`, `openai`, …) directly from app code | The LangChain chat models built in `app/services/assistant/llm.py`; ask before adding another provider |

@@ -15,6 +15,9 @@ cd frontend && npm run dev
 
 Open **http://localhost:3000**.
 
+The **AI Assistant** also needs a model configured in `backend/.env`: a Google Gemini key in `GEMINI_API_KEY`, or
+`LLM_PROVIDER=ollama` with a local Ollama model (see the README). Everything else works without it.
+
 ### Accounts and roles
 
 Log in with your Supabase account, or create one at **Sign up** (if email confirmation is on in your Supabase
@@ -59,8 +62,8 @@ you need them:
 6. **Deals** — real opportunities with a value.
 7. Day to day: **Activities, Notes, Tasks** on those records.
 
-Data is entered through the forms in the app (there is no CSV import yet). The API at
-http://localhost:8000/docs accepts the same data if you ever want to script a bulk import.
+Data is entered through the forms in the app, or by describing it to the **AI Assistant** (there is no CSV
+import yet). The API at http://localhost:8000/docs accepts the same data if you ever want to script a bulk import.
 
 ---
 
@@ -188,13 +191,44 @@ Pick a **date range** at the top, then see:
 
 Reports are only as good as the data: keep deal stages, close dates and lead sources up to date.
 
+### AI Assistant
+
+Click **AI Assistant** in the top bar (on any page) to open the chat panel. Write what happened in your own words,
+for example:
+
+> Cold-called Priya Shah, CTO at Brightwave. She's interested in a demo next week.
+
+The assistant will:
+
+- **look for existing records first**, so it reuses a lead, contact or company instead of creating a duplicate;
+- create a **lead** for a new prospect (with source, company name and a score), or a **contact/company** when you
+  say it's an existing relationship;
+- **log the call, email or meeting** on that record, with what was discussed;
+- turn promised follow-ups into **tasks** (with due dates like "next Tuesday" worked out for you);
+- save background such as budget or needs as a **note**;
+- update a lead's **status and score** when your story implies it (e.g. Contacted, Qualified).
+
+Each reply lists what was saved as links; click one to open the record. Click a suggestion to start, press
+**Enter** to send (**Shift+Enter** for a new line), and **New chat** to start over. The conversation is kept while
+you move between pages, but not after a page reload.
+
+Good to know:
+
+- It can't create deals, convert leads, or delete anything. Use the normal pages for those.
+- It follows your permissions: a Sales Rep can't change a teammate's lead through chat either. Everything it saves
+  shows up in the audit log and sends the usual notifications.
+- It won't make up names or contact details. If something is missing, it asks.
+- If the model is busy or the free daily quota is used up, you'll see a message saying so; anything already saved
+  stays saved.
+
 ---
 
 ## 4. A typical day
 
 1. Check the **bell** and **Dashboard → upcoming tasks**.
 2. New enquiry → **New lead** (with source and score).
-3. After calling them → **Log activity** on the lead, set status to Contacted/Qualified.
+3. After calling them → **Log activity** on the lead, set status to Contacted/Qualified. (Or tell the **AI
+   Assistant** about the call, and it does steps 2–3 and creates the follow-up task for you.)
 4. Ready to buy → **Convert** the lead, creating the deal.
 5. Move the deal across the **Pipeline** as it progresses; add **Tasks** for next steps and **Notes** for
    context.
