@@ -1,7 +1,8 @@
 # NexaCRM — Architecture & Implementation Plan
 
-> Status: all ten phases implemented. This document was the plan; it has been
-> updated where the implementation made a different (documented) choice.
+> Status: all ten phases implemented, plus an **AI assistant** (phase 11). This
+> document was the plan; it has been updated where the implementation made a
+> different (documented) choice, and to describe the code as it is now.
 
 This document is the blueprint for NexaCRM. It covers the architecture, folder
 structure, database schema, entity relationships, API surface, frontend pages and
@@ -28,10 +29,12 @@ Guiding priority: **functionality > simplicity > clean code > polish > optimizat
 │  - verifies Supabase JWT (dependency)                        │
 │  - loads/creates local profile + role                        │
 │  - routers → services → SQLAlchemy models                    │
-└───────────────────────────┬──────────────────────────────────┘
+│  - /api/assistant/chat → LangGraph agent + LangChain tools   │──────► Google Gemini API
+└───────────────────────────┬──────────────────────────────────┘        or local Ollama
                             ▼
                 ┌──────────────────────┐
-                │  PostgreSQL (Docker) │  ← all CRM data, Alembic migrations
+                │  PostgreSQL          │  ← all CRM data, Alembic migrations
+                │  (local or Docker)   │
                 └──────────────────────┘
 ```
 
@@ -67,6 +70,9 @@ Guiding priority: **functionality > simplicity > clean code > polish > optimizat
 | Task-due notifications are generated **lazily** when notifications are fetched | No background worker needed; deterministic and easy to test. |
 | Notifications refresh via TanStack Query polling (every 60s) | No websockets or extra infrastructure. |
 | Kanban uses native HTML5 drag-and-drop plus a "Move to stage" menu | No extra drag-and-drop library; menu keeps it usable on touch devices. |
+| AI assistant tools call the **existing route functions** (`leads.create_lead`, `activities.create_activity`, …) | One code path for UI and chat: validation, permissions, audit entries and notifications can't drift apart. |
+| The assistant is **stateless** on the server | The browser sends the whole conversation (with the records saved in earlier turns) on every message. No chat tables, no sessions to expire. |
+| Chat model behind a small factory (`build_chat_model`), Gemini or Ollama | Switch providers with one env var; Gemini gets a fallback model for overload/quota errors; tests inject a scripted fake model. |
 
 ### Roles & authorization
 
@@ -94,11 +100,14 @@ common for small sales teams and keeps queries simple.
 
 ```
 nexa-crm/
-├── docker-compose.yml            # frontend + backend + postgres
-├── .env.example                  # compose-level variables
+├── docker-compose.yml            # frontend + backend + postgres (optional)
+├── .env.example                  # compose-level variables (Supabase + AI assistant)
+├── docker/postgres/init.sql      # creates nexa_crm_test
 ├── README.md
 ├── docs/
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md           # this file
+│   ├── USER_GUIDE.md             # how to use every feature
+│   └── purpose · ai · tech-stack · design · rules · production · cloud · contributing (.md)
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -119,15 +128,17 @@ nexa-crm/
 │   │   ├── models/               # one file per table group
 │   │   ├── schemas/              # Pydantic request/response models
 │   │   ├── services/             # business logic (lead conversion, reports…)
+│   │   │   └── assistant/        # agent.py (LangGraph graph + system prompt),
+│   │   │                         # tools.py (LangChain tools), llm.py (Gemini / Ollama)
 │   │   ├── api/
 │   │   │   ├── router.py         # includes all feature routers under /api
 │   │   │   └── routes/           # companies.py, contacts.py, leads.py, ...
 │   │   ├── dependencies/
 │   │   │   ├── auth.py           # get_current_user, require_roles(...)
 │   │   │   └── pagination.py     # page / page_size / sort params
-│   │   └── utils/
+│   │   └── utils/query.py        # search_filter, apply_sort, paginate, get_or_404
 │   ├── scripts/
-│   │   └── seed.py               # realistic demo data
+│   │   └── seed.py               # demo data; --reset reseeds, --clear empties the CRM
 │   └── tests/
 │       ├── conftest.py           # test DB + JWT factory
 │       └── test_*.py
@@ -147,17 +158,21 @@ nexa-crm/
         │   └── shared/           # data table, pagination, filters, badges,
         │                         # kanban, timeline, charts, confirm dialog
         ├── features/             # per-module components + hooks
-        │   ├── contacts/         # contact-form.tsx, use-contacts.ts, ...
-        │   ├── companies/  leads/  deals/  tasks/  activities/ ...
-        ├── hooks/                # generic hooks (use-debounce, use-current-user)
+        │   ├── contacts/         # contacts-view.tsx, contact-detail.tsx, contact-form-dialog.tsx, hooks.ts, …
+        │   ├── companies/  leads/  deals/  tasks/  activities/
+        │   ├── dashboard/  reports/  notifications/  settings/  auth/
+        │   └── assistant/        # assistant-sheet.tsx (chat panel), hooks.ts
+        ├── hooks/                # use-current-user, use-list-state, use-resource, use-mobile
         ├── lib/
-        │   ├── supabase/         # browser + server clients
-        │   ├── api-client.ts     # Axios instance + token interceptor
-        │   └── query-client.ts
+        │   ├── supabase/         # browser, server and proxy clients + config
+        │   ├── api-client.ts     # Axios instance + token interceptor, getErrorMessage
+        │   └── utils.ts          # cn()
         ├── services/             # thin typed API functions per resource
-        ├── types/                # shared TS types mirroring API schemas
-        └── utils/                # formatting (currency, dates), cn()
+        ├── types/index.ts        # shared TS types mirroring API schemas
+        └── utils/format.ts       # Intl formatting (currency, dates)
 ```
+
+The TanStack `QueryClient` is created in `src/app/providers.tsx`.
 
 ---
 
@@ -354,7 +369,8 @@ and return JSON. OpenAPI docs at `/docs`.
 `?page=1&page_size=20&search=…&sort_by=created_at&sort_order=desc&<filters>` →
 `{ items, total, page, page_size, pages }`. `sort_by` is whitelisted per resource.
 
-**Errors**: `{ "detail": "message" }` with 400/401/403/404/409/422 as appropriate.
+**Errors**: `{ "detail": "message" }` with 400/401/403/404/409/422 as appropriate;
+the assistant adds 502 (the model failed) and 503 (Gemini selected but no API key).
 
 | Area | Method & path | Notes |
 |---|---|---|
@@ -385,6 +401,7 @@ and return JSON. OpenAPI docs at `/docs`.
 | Notifications | `GET /api/notifications`, `GET /api/notifications/unread-count` | also generates due-task notifications lazily |
 | | `PATCH /api/notifications/{id}/read`, `POST /api/notifications/read-all` | |
 | Audit log | `GET /api/audit-logs` | **manager/admin**; filters: entity_type, user_id, action, date range |
+| AI assistant | `POST /api/assistant/chat` | body `{ messages: [{role, content, records?}] }` (1–50 messages, the last from the user, ≤ 8,000 chars each) → `{ reply, records }` |
 
 ### What triggers notifications / audit logs
 
@@ -397,6 +414,7 @@ and return JSON. OpenAPI docs at `/docs`.
 | Task due today or overdue | `task_due` → owner (once per task) | — |
 | Lead converted | — | `lead.converted` |
 | Create / update / delete of any main record | — | `<entity>.created/updated/deleted` |
+| Anything saved by the AI assistant | same as the matching UI action | same as the matching UI action |
 
 ---
 
@@ -419,13 +437,59 @@ and return JSON. OpenAPI docs at `/docs`.
 | `/reports` | Date-range picker + six report cards/charts | |
 | `/notifications` | Full list, mark read / mark all read (bell in the topbar too) | |
 | `/settings` | Profile · Users & roles (admin) · Pipeline stages (admin) · Audit log (manager/admin) | |
+| *(every page)* | **AI Assistant** button in the top bar opens a right-hand chat panel | AssistantSheet |
 
 Create/edit forms open in dialogs/sheets instead of separate pages, which keeps
 the route count low and the UX fast.
 
-**Data layer**: `services/*.ts` (typed Axios calls) → `features/*/use-*.ts`
-(TanStack Query hooks: queries with pagination/filter keys, mutations that
-invalidate related queries and show toasts).
+**Data layer**: `services/*.ts` (typed Axios calls) → `features/*/hooks.ts`
+(TanStack Query hooks built with `createResourceHooks`: queries with
+pagination/filter keys, mutations that invalidate related queries and show
+toasts). The assistant's chat mutation invalidates the whole query cache when
+it saved anything, because it may have touched any list, detail or timeline.
+
+---
+
+## 6b. AI assistant
+
+Files: `backend/app/services/assistant/{agent,tools,llm}.py`, `app/schemas/assistant.py`,
+`app/api/routes/assistant.py`; frontend `features/assistant/`, `services/assistant.ts`.
+
+```
+POST /api/assistant/chat ──▶ chat(db, user, messages)
+                                 │  system prompt (user's name, today's date) + conversation
+                                 ▼
+             START ──▶ agent ──(tool calls?)── yes ──▶ tools ──┐
+                         ▲          │                          │
+                         │          no ──▶ END (reply text)    │
+                         └─────────────────────────────────────┘
+```
+
+- **agent** node: the chat model from `build_chat_model` (`llm.py`) with the tools bound.
+  `LLM_PROVIDER=gemini` → `ChatGoogleGenerativeAI` (`GEMINI_MODEL`, 40s timeout, one retry,
+  then `GEMINI_FALLBACK_MODEL` on rate-limit/API/timeout/connection errors);
+  `LLM_PROVIDER=ollama` → `ChatOllama` (`OLLAMA_MODEL`, thinking off, 8k context, replies
+  capped at 1,024 tokens, the model's default temperature because Qwen3 loops at temperature 0).
+- **tools** node: LangGraph `ToolNode` with eight tools: `search_records`, `create_lead`,
+  `update_lead`, `create_company`, `create_contact`, `log_activity`, `add_note`, `create_task`.
+  Each builds the normal Pydantic `*Create`/`*Update` schema and calls the route function, so
+  permissions (a rep can't update another rep's lead), audit entries and notifications are
+  identical to the UI. Each save is committed immediately.
+- The DB session and user travel in the LangGraph run config (`configurable`), which the model
+  never sees. Tool calls run one at a time (`max_concurrency=1`) because they share one session.
+- Tool errors (validation, 403, 404…) are rolled back and returned to the model as
+  `{"error": …}`, so it can fix its arguments or explain the problem.
+- Each tool returns `(content, artifact)`: JSON for the model, and a `SavedRecord`
+  (`type`, `action`, `id`, `label`, `link_type`, `link_id`) that the chat shows as a link.
+  Activities and notes link to the record they were logged on.
+- At most 10 model rounds per message. If the limit is hit, or the model fails after
+  something was saved, the reply still lists what was saved. A model failure with nothing
+  saved returns 502 with a readable reason (daily quota used up, rate limit, timeout,
+  Ollama not reachable or model not pulled).
+- The system prompt's rules: search before creating (no duplicates), new prospects become
+  **leads**, every described call/email/meeting is logged, promised follow-ups become tasks,
+  never invent names or contact details, ask one clarifying question at a time.
+- Not available through chat today: deals, lead conversion, deletes, and reports.
 
 ---
 
@@ -439,13 +503,14 @@ browser → short summary of what was built.
 | **1. Setup + Supabase auth** | Git init; backend restructure (config, DB session, Alembic, `profiles` model); JWT verification + `get_current_user` / `require_roles`; `GET /api/me`, users endpoints; Postgres via Docker Compose; frontend deps (Supabase SSR, TanStack Query, RHF, shadcn/ui); login/signup/reset pages; `proxy.ts`; app shell with sidebar; Axios interceptor | pytest auth tests (401 missing/invalid token, JIT profile, 403 role check); sign up → login → dashboard shell shows name & role |
 | **2. Companies + Contacts** | Models, migrations, schemas, CRUD APIs, ownership rules; reusable DataTable, Pagination, Filters, form dialog; list + detail pages | CRUD + permission tests; manual CRUD in UI |
 | **3. Leads + conversion** | Leads CRUD; conversion service & dialog | Conversion tests (creates/links company, contact, deal; 409 on re-convert) |
-| **4. Deals + pipeline** | Pipelines/stages (+ default seed via migration); deals CRUD; board endpoint; stage moves; Kanban UI | Stage-move tests (status, closed_at, probability) |
+| **4. Deals + pipeline** | Pipelines/stages (default pipeline created lazily on first use); deals CRUD; board endpoint; stage moves; Kanban UI | Stage-move tests (status, closed_at, probability) |
 | **5. Activities, tasks, notes** | Three modules + timeline endpoint + timeline component on detail pages | CRUD tests, timeline ordering |
 | **6. Dashboard + reports** | Summary + 6 report endpoints; charts (shadcn charts / Recharts) | Report query tests on known data |
 | **7. Notifications + audit log** | Notification + audit services wired into existing actions; bell + page; audit log in settings | Tests that actions create the right rows |
 | **8. Search / filter / pagination pass** | Make every list consistent (search, filters, sorting, URL-synced state) | Query tests; UI check |
 | **9. Tests, error handling, UI polish** | Global error handlers, loading/empty/error states, toasts, responsive layout, seed script | Full pytest run; `next build` + lint clean |
-| **10. Docker + docs + cleanup** | Dockerfiles, full `docker-compose.yml`, `.env.example`s, README (setup, Supabase, migrations, seed, API, testing, future work) | `docker compose up` from a clean clone works end-to-end |
+| **10. Docker + docs + cleanup** | Dockerfiles, full `docker-compose.yml`, `.env.example`s, README (setup, Supabase, migrations, seed, API, testing, future work) | `docker compose config` validates; a full image build and run hasn't been done yet (see `cloud.md`) |
+| **11. AI assistant** | LangGraph agent + LangChain tools over the existing routes; Gemini/Ollama selection with a fallback model; chat panel in the top bar | `tests/test_assistant.py` with a scripted fake model; manual chats against the test database |
 
 **Later, separate phase — "Scalability & Production Optimization"**: Redis
 caching, background jobs, query optimization, rate limiting, structured logging,
@@ -457,6 +522,7 @@ monitoring, CI/CD, cloud deployment. None of it is part of the initial build.
 
 **Backend**: `psycopg[binary]` (Postgres driver), `pydantic-settings`,
 `email-validator`, `PyJWT[crypto]` (JWT + JWKS verification), `pytest`, `httpx`.
+AI assistant: `langgraph`, `langchain`, `langchain-google-genai`, `langchain-ollama`.
 
 **Frontend**: `@supabase/supabase-js`, `@supabase/ssr`, `@tanstack/react-query`,
 `react-hook-form`, `@hookform/resolvers`, shadcn/ui (brings Radix primitives,
@@ -471,8 +537,12 @@ monitoring, CI/CD, cloud deployment. None of it is part of the initial build.
 | | `SUPABASE_URL` | used to fetch JWKS public keys |
 | | `SUPABASE_JWT_SECRET` | optional — only for projects on legacy HS256 keys |
 | | `CORS_ORIGINS` | e.g. `http://localhost:3000` |
+| | `LLM_PROVIDER` | `gemini` (default) or `ollama` |
+| | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL` | Gemini settings (model defaults `gemini-3.5-flash-lite` / `gemini-3.5-flash`) |
+| | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | Ollama settings (defaults `http://localhost:11434` / `qwen3:4b`) |
 | `frontend/.env.local` | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | publishable (anon) key — safe for the browser |
 | | `NEXT_PUBLIC_API_URL` | e.g. `http://localhost:8000/api` |
 
 No service-role key is needed anywhere, so no secret ever reaches the browser.
+The Gemini API key stays in `backend/.env`; the browser only talks to FastAPI.

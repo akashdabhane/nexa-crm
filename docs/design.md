@@ -70,7 +70,7 @@ Badges always show a **text label**, so color is never the only signal. Activity
 Tailwind v4 default breakpoints: `sm` 640px · `md` 768px · `lg` 1024px · `xl` 1280px. `useIsMobile()`
 (`src/hooks/use-mobile.ts`) treats < 768px as mobile (the sidebar becomes a sheet).
 
-- **App shell** (`src/app/(app)/layout.tsx`): collapsible icon sidebar (`components/layout/app-sidebar.tsx`, nav in `nav-items.ts`), sticky top bar with sidebar trigger and notification bell, `main` with `p-4 md:p-6 space-y-6`.
+- **App shell** (`src/app/(app)/layout.tsx`): collapsible icon sidebar (`components/layout/app-sidebar.tsx`, nav in `nav-items.ts`), sticky top bar with sidebar trigger, the **AI Assistant** button (outline, `Sparkles` icon in `text-primary`, label hidden below `sm`) and the notification bell, `main` with `p-4 md:p-6 space-y-6`.
 - **Auth pages** (`src/app/(auth)/layout.tsx`): split screen — form on the left, indigo brand panel on the right from `lg`.
 - Grids collapse to one column on mobile: KPI tiles `sm:grid-cols-2 xl:grid-cols-4`; record pages `lg:grid-cols-3` (details card + 2-column tabs); filter rows `flex-col sm:flex-row sm:flex-wrap`.
 - Wide tables scroll horizontally inside their card (`overflow-x-auto`); the Kanban board scrolls horizontally with fixed `w-72` columns.
@@ -84,6 +84,7 @@ Tailwind v4 default breakpoints: `sm` 640px · `md` 768px · `lg` 1024px · `xl`
 | **Create/Edit form** | shadcn `Dialog` with a `<form id>` body (`grid sm:grid-cols-2 gap-4`, scrollable `max-h-[65vh]`), `FormField` wrappers, footer Cancel + submit (`form="…"`). Selects via `Controller`. Related records via `EntityCombobox`; users via `UserSelect`. |
 | **Destructive action** | `ConfirmDialog` (stays open while pending) — never delete on a single click. |
 | **Dashboard/report** | `StatCard` tiles → `Card`s with `BarChart` or tables. |
+| **Side panel / chat** | shadcn `Sheet` from the right (full width on mobile, `sm:max-w-md`): header with title + description, scrollable body, form pinned to the bottom. User bubbles `bg-primary text-primary-foreground` on the right, assistant bubbles `bg-muted` on the left; saved records as small bordered link rows with a type icon and "lead created"-style label; "Working on it…" spinner while pending; errors as toasts with the draft restored. See `features/assistant/assistant-sheet.tsx`. |
 
 ## Shared component inventory
 
@@ -91,7 +92,7 @@ Tailwind v4 default breakpoints: `sm` 640px · `md` 768px · `lg` 1024px · `xl`
 `states` (`EmptyState`, `ErrorState`, `DetailSkeleton`), `confirm-dialog`, `status-badge`, `entity-combobox`,
 `user-select` (+ `useUsers`), `user-avatar` (initials, stable color), `owner-cell`, `detail-list`, `record-header`,
 `record-tabs`, `form-field`, `kanban-board`, `activity-timeline`, `bar-chart`, `stat-card`.
-`frontend/src/components/layout/`: `app-sidebar`, `topbar`, `user-menu`, `page-header`, `logo`, `nav-items`.
+`frontend/src/components/layout/`: `app-sidebar`, `topbar` (hosts `AssistantSheet` and `NotificationBell`), `user-menu`, `page-header`, `logo`, `nav-items`.
 `frontend/src/components/ui/`: shadcn primitives — generated; don't hand-edit unless necessary.
 
 ## Charts
@@ -105,7 +106,7 @@ next to any chart whose numbers matter (reports do this). For progress-style com
 ## Accessibility (target: WCAG 2.1 AA)
 
 - Every input has a visible `<Label htmlFor>` via `FormField`; errors are rendered as text under the field.
-- Icon-only buttons need `aria-label` (see pagination, row actions, the notification bell with its unread count).
+- Icon-only buttons need `aria-label` (see pagination, row actions, the notification bell with its unread count, the assistant's Send button and message box).
 - Custom controls declare roles (the activity type picker is a `radiogroup` with `aria-checked`); alerts use `role="alert"` / `role="status"`.
 - Keep Radix/shadcn focus styles; don't remove outlines. Hover-revealed actions must also appear on `focus-visible`/`focus-within`.
 - Never encode meaning by color alone (badges have text, overdue dates say "Overdue", charts have labels/tables).

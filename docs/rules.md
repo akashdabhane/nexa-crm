@@ -14,6 +14,7 @@ nexa-crm/
 │   ├── models/                 # one module per table group; ALL re-exported in models/__init__.py
 │   ├── schemas/                # Pydantic models per resource (+ common.py, related.py)
 │   ├── services/               # business logic, no HTTP concerns except raising helpers from core/exceptions
+│   │   └── assistant/          # agent.py (LangGraph graph, prompt), tools.py (LangChain tools), llm.py (model factory)
 │   ├── api/router.py           # ROUTERS tuple → /api
 │   ├── api/routes/<feature>.py # one APIRouter per feature
 │   ├── dependencies/           # auth.py (get_current_user, require_roles/admin/manager), pagination.py
@@ -27,7 +28,7 @@ nexa-crm/
     ├── app/auth/callback/route.ts
     ├── proxy.ts
     ├── components/{ui,shared,layout}/
-    ├── features/<module>/      # views, dialogs, tabs, hooks.ts for one module
+    ├── features/<module>/      # views, dialogs, tabs, hooks.ts for one module (assistant/ = chat panel)
     ├── hooks/                  # use-current-user, use-list-state, use-resource, use-mobile
     ├── lib/                    # api-client.ts, supabase/*, utils.ts
     ├── services/<resource>.ts  # typed API functions
@@ -65,7 +66,7 @@ nexa-crm/
 **Other rules**
 - Endpoints are **sync `def`** (sync SQLAlchemy). Don't mix in `async def` endpoints that touch the DB.
 - Every endpoint except `/api/health` depends on `get_current_user` (or `require_admin` / `require_manager`).
-- Validate existence of referenced IDs and raise **400** (`bad_request`) for bad links; **404** (`not_found`) for the path resource; **403** (`forbidden`) for permissions; **409** (`conflict`) for state conflicts; let Pydantic produce **422**.
+- Validate existence of referenced IDs and raise **400** (`bad_request`) for bad links; **404** (`not_found`) for the path resource; **403** (`forbidden`) for permissions; **409** (`conflict`) for state conflicts; let Pydantic produce **422**. For a failing upstream service (the LLM) use **502** (`bad_gateway`); for a missing configuration **503** (`service_unavailable`).
 - Raise the helpers in `app/core/exceptions.py`; never return error dicts manually. Never leak exception details to clients (the global handler logs and returns a generic 500).
 - Updates: `payload.model_dump(exclude_unset=True)`; drop `None` for non-nullable columns; apply via `audit.apply_changes` so the audit diff is exact.
 - Never build SQL with string formatting; use SQLAlchemy expressions. Sort only by whitelisted columns.
@@ -73,9 +74,17 @@ nexa-crm/
 - Type hints on all function signatures; `X | None` style; no `Any` unless unavoidable.
 - Logging: use `logging.getLogger("nexa_crm")`; no `print` in app code (the seed script may print).
 
+**Adding an AI assistant tool (recipe)**
+1. In `app/services/assistant/tools.py`, write a `@tool(response_format="content_and_artifact")` function. Describe every argument with `Annotated[..., "description"]` (the model reads them) and take `config: RunnableConfig`.
+2. Inside, define `action(db, user)` that builds the normal `*Create`/`*Update` schema from `_given(...)` (drops empty args) and calls the **existing route function** (e.g. `tasks.create_task(payload, user, db)`). Return `(json-able dict for the model, SavedRecord | None)`; build the record with `_saved(...)`.
+3. `return _run(config, action)`. It supplies the session and user and turns `ValueError`/`HTTPException` into `{"error": …}` for the model.
+4. Add it to `TOOLS`; extend `SavedRecord.type` in `app/schemas/assistant.py`, `AssistantRecord` in `frontend/src/types/index.ts` and `RECORD_ICONS` in `assistant-sheet.tsx` if it saves a new kind of record; mention it in `SYSTEM_PROMPT` if the model needs guidance on when to use it.
+5. Test it in `tests/test_assistant.py` with `ScriptedModel` (tool call → assert DB rows, audit entry and the returned `records`).
+- Model access only goes through `build_chat_model()` in `llm.py`; keep provider-specific code there.
+
 ## Frontend patterns
 
-- **Data access:** add API calls to `src/services/<resource>.ts` (use `createCrudService<T, TInput>(path)` for standard REST), then hooks in `features/<module>/hooks.ts` via `createResourceHooks(key, service, { label, related })`. Mutations toast success/error and invalidate related keys automatically. Only use raw `useQuery`/`useMutation` for non-CRUD endpoints (reports, board, notifications).
+- **Data access:** add API calls to `src/services/<resource>.ts` (use `createCrudService<T, TInput>(path)` for standard REST), then hooks in `features/<module>/hooks.ts` via `createResourceHooks(key, service, { label, related })`. Mutations toast success/error and invalidate related keys automatically. Only use raw `useQuery`/`useMutation` for non-CRUD endpoints (reports, board, notifications, assistant chat).
 - **Never call Axios from components** directly; never use `fetch` for the API.
 - **List pages:** `useListState({ filters, defaultSort, defaultOrder })` → pass `list.params` to `useList`. Use `setFilters` (not two `setFilter` calls) when changing several filters at once.
 - **Pages:** `app/(app)/<route>/page.tsx` exports `metadata` and renders a feature view. Wrap views that use `useSearchParams` in `<Suspense>`. Dynamic routes: `async function Page({ params }: PageProps<"/deals/[id]">) { const { id } = await params; }`.
@@ -103,4 +112,8 @@ nexa-crm/
 - Notes use `owner_id` for the author so the same `ensure_can_edit` rule applies.
 - `GET /api/pipelines` and `/deals/board` may create the default pipeline (lazy provisioning).
 - `GET /api/notifications*` may create `task_due` notifications (lazy reminders instead of a scheduler).
+- Assistant tools import and call route functions (`app.api.routes.leads.create_lead`, …) from a service. That's deliberate: one code path for UI and chat.
+- Each assistant tool commits on its own, so a chat that fails halfway keeps what it already saved (and says so).
+- `useAssistantChat` calls `queryClient.invalidateQueries()` with no key after a chat that saved anything; the assistant can touch any list, detail or timeline.
+- The assistant's conversation isn't persisted anywhere; "New chat" or a page reload clears it.
 - shadcn components in `components/ui/` import `cn` from the `cn` package; app code imports it from `@/lib/utils` (which re-exports the same function).
