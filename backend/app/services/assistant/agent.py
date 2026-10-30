@@ -138,11 +138,16 @@ def chat(db: Session, user: Profile, messages: list[ChatMessage]) -> dict:
             return {"reply": f"I saved the records below, but then hit a problem. {error}", "records": saved}
         raise bad_gateway(error)
 
+    answer = state_messages[-1]
     records = _saved_records(state_messages)
-    if reply := state_messages[-1].text:
-        return {"reply": reply, "records": records}
-    # The model stopped without a word (small local models sometimes spend their whole budget thinking).
+    if answer.text:
+        return {"reply": answer.text, "records": records}
+    # The model stopped without a word, e.g. a small local model that spent its whole reply budget thinking.
     if records:
         return {"reply": "I saved the records below.", "records": records}
-    reply = "Sorry, I couldn't work out what to save from that. Could you try again or rephrase it?"
+    stop_reason = answer.response_metadata.get("done_reason") or answer.response_metadata.get("finish_reason")
+    if stop_reason in ("length", "MAX_TOKENS"):
+        reply = "The AI model ran out of room while thinking and didn't finish. Please try again."
+    else:
+        reply = "Sorry, I couldn't work out what to save from that. Could you try again or rephrase it?"
     return {"reply": reply, "records": []}

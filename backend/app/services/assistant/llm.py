@@ -61,10 +61,11 @@ def _ollama() -> BaseChatModel:
         model=settings.ollama_model,
         base_url=settings.ollama_base_url,
         reasoning=thinks,
-        # Ollama's default context window is too small for the prompt, tool schemas and chat history.
-        num_ctx=8192,
-        # Cap each reply so a model that starts repeating itself can't hang the request (thinking needs more room).
-        num_predict=4096 if thinks else 1024,
+        # Cap each reply so a model that starts repeating itself can't hang the request. Thinking models need far
+        # more room (qwen3:4b often thinks for ~4k tokens before a single tool call).
+        num_predict=6144 if thinks else 1024,
+        # Ollama's default context window is too small: it must hold the prompt, tool schemas, history and the reply.
+        num_ctx=10240 if thinks else 8192,
         # No temperature override: Qwen3 loops on greedy decoding (temperature 0); its Ollama defaults avoid that.
     )
 

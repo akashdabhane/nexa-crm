@@ -232,6 +232,7 @@ def test_models_are_configured_from_settings(monkeypatch):
     assert isinstance(ollama_model, ChatOllama)
     assert (ollama_model.model, ollama_model.base_url) == ("qwen3:4b", "http://ollama.local:11434")
     assert ollama_model.reasoning is True  # thinking-only models keep their reasoning out of the reply
+    assert (ollama_model.num_predict, ollama_model.num_ctx) == (6144, 10240)
 
     monkeypatch.setattr(llm, "_is_thinking_model", lambda model: False)
     assert llm._ollama().reasoning is False
@@ -254,6 +255,9 @@ def test_chat_requires_gemini_key_and_a_user_message(client, rep, monkeypatch):
 def test_empty_model_answer_is_not_reported_as_done(client, rep, monkeypatch):
     use_model(monkeypatch, [reply("")])
     assert "couldn't work out" in send(client, rep, "Hmm").json()["reply"]
+
+    use_model(monkeypatch, [lambda _: AIMessage("", response_metadata={"done_reason": "length"})])
+    assert "ran out of room" in send(client, rep, "Hmm").json()["reply"]
 
     use_model(monkeypatch, [calls(("create_lead", {"name": "Jane Doe"})), reply("")])
     body = send(client, rep, "Add Jane Doe").json()
