@@ -1,6 +1,7 @@
 """The AI assistant (LangGraph agent), with the chat model replaced by a scripted fake."""
 
 import json
+from datetime import date, timedelta
 from typing import Any
 
 from langchain_core.exceptions import ModelAPIError, ModelRateLimitError
@@ -125,6 +126,8 @@ def test_chat_creates_lead_activity_and_task(client, db, rep, monkeypatch):
     # The system prompt went first, and both results of the parallel tool call came back before the final answer.
     final_request = model.calls[-1]
     assert final_request[0].type == "system" and "Riley Rep" in final_request[0].content
+    next_week = date.today() + timedelta(days=7)
+    assert f"{next_week:%A} {next_week:%Y-%m-%d}" in final_request[0].content  # dates spelled out for small models
     assert [m.type for m in final_request[-2:]] == ["tool", "tool"]
 
 

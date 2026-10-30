@@ -13,7 +13,7 @@ turns) with every message.
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 import httpx
 import ollama
@@ -41,7 +41,8 @@ SYSTEM_PROMPT = """You are the NexaCRM assistant for {name}. The user tells you,
 sales work: new prospects, calls, emails, meetings, follow-ups. Record it accurately in the CRM with your tools, \
 then confirm briefly.
 
-Today is {today:%A, %B %d, %Y}. Resolve relative dates ("next Tuesday") against it; write dates as YYYY-MM-DD.
+Today is {today:%A, %Y-%m-%d}. Resolve relative dates ("next Tuesday") against it; write dates as YYYY-MM-DD. \
+The coming days: {coming_days}.
 
 How to record things:
 - Always call search_records before creating a person or company, so you never create duplicates. Reuse an \
@@ -110,7 +111,10 @@ def _model_error_text(exc: Exception) -> str:
 
 def chat(db: Session, user: Profile, messages: list[ChatMessage]) -> dict:
     graph = build_graph()
-    system = SystemMessage(SYSTEM_PROMPT.format(name=user.full_name, today=date.today()))
+    today = date.today()
+    # Small local models get weekday arithmetic wrong, so spell out the next week.
+    coming_days = ", ".join(f"{day:%A} {day:%Y-%m-%d}" for day in (today + timedelta(days=n) for n in range(1, 8)))
+    system = SystemMessage(SYSTEM_PROMPT.format(name=user.full_name, today=today, coming_days=coming_days))
     history = [system, *(_to_message(message) for message in messages)]
     config = {
         "configurable": {"db": db, "user": user},  # handed to the tools, never to the model
