@@ -224,9 +224,14 @@ def test_ollama_provider_needs_no_gemini_key(client, rep, monkeypatch):
 def test_models_are_configured_from_settings(monkeypatch):
     monkeypatch.setattr(settings, "ollama_model", "qwen3:4b")
     monkeypatch.setattr(settings, "ollama_base_url", "http://ollama.local:11434")
+    monkeypatch.setattr(llm, "_is_thinking_model", lambda model: True)
     ollama_model = llm._ollama()
     assert isinstance(ollama_model, ChatOllama)
     assert (ollama_model.model, ollama_model.base_url) == ("qwen3:4b", "http://ollama.local:11434")
+    assert ollama_model.reasoning is True  # thinking-only models keep their reasoning out of the reply
+
+    monkeypatch.setattr(llm, "_is_thinking_model", lambda model: False)
+    assert llm._ollama().reasoning is False
 
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
     gemini_model = llm._gemini("gemini-3.5-flash-lite")

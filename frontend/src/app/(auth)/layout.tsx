@@ -1,17 +1,21 @@
 import { AlertTriangle } from "lucide-react";
 
 import { Logo } from "@/components/layout/logo";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export default function AuthLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
       <div className="flex flex-col gap-6 p-6 md:p-10">
-        <Logo />
+        <div className="flex items-center justify-between">
+          <Logo />
+          <ThemeToggle />
+        </div>
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full max-w-sm space-y-4">
             {!isSupabaseConfigured && (
-              <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <p>
                   Supabase is not configured. Copy <code>frontend/.env.example</code> to{" "}

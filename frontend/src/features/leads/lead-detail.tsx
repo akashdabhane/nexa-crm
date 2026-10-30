@@ -60,7 +60,7 @@ export function LeadDetail({ id }: { id: string }) {
       />
 
       {isConverted && (
-        <div className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 sm:flex-row sm:items-center sm:justify-between">
           <p className="flex items-center gap-2">
             <CheckCircle2 className="size-4" /> Converted on {formatDateTime(lead.converted_at)}
           </p>

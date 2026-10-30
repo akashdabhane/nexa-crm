@@ -35,7 +35,7 @@ export function TaskItem({ task, onEdit, showLinks = true }: { task: Task; onEdi
         <p className={cn("text-sm font-medium", done && "text-muted-foreground line-through")}>{task.title}</p>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {task.due_date && (
-            <span className={cn("inline-flex items-center gap-1", task.is_overdue && "font-medium text-rose-600")}>
+            <span className={cn("inline-flex items-center gap-1", task.is_overdue && "font-medium text-rose-600 dark:text-rose-400")}>
               <CalendarDays className="size-3" /> {task.is_overdue ? "Overdue · " : ""}
               {formatDate(task.due_date)}
             </span>

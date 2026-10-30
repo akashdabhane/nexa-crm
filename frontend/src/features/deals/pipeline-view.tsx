@@ -70,7 +70,7 @@ function DealCard({ deal, stages, canMove, onMove }: { deal: Deal; stages: Stage
         {deal.owner && <UserAvatar name={deal.owner.full_name} className="size-6" />}
       </div>
       {deal.expected_close_date && (
-        <p className={`mt-2 flex items-center gap-1 text-xs ${overdue ? "text-rose-600" : "text-muted-foreground"}`}>
+        <p className={`mt-2 flex items-center gap-1 text-xs ${overdue ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
           <CalendarDays className="size-3" /> {formatDate(deal.expected_close_date)}
         </p>
       )}

@@ -468,8 +468,12 @@ POST /api/assistant/chat ──▶ chat(db, user, messages)
 - **agent** node: the chat model from `build_chat_model` (`llm.py`) with the tools bound.
   `LLM_PROVIDER=gemini` → `ChatGoogleGenerativeAI` (`GEMINI_MODEL`, 40s timeout, one retry,
   then `GEMINI_FALLBACK_MODEL` on rate-limit/API/timeout/connection errors);
-  `LLM_PROVIDER=ollama` → `ChatOllama` (`OLLAMA_MODEL`, thinking off, 8k context, replies
-  capped at 1,024 tokens, the model's default temperature because Qwen3 loops at temperature 0).
+  `LLM_PROVIDER=ollama` → `ChatOllama` (`OLLAMA_MODEL`, 8k context, the model's default
+  temperature because Qwen3 loops at temperature 0). Thinking follows the model: `qwen3:4b` is
+  Qwen3-4B-Thinking-2507, which can't stop thinking (it reasons in the reply instead), so when
+  Ollama reports the `thinking` capability it's turned on (reasoning kept out of the reply,
+  replies capped at 4,096 tokens); otherwise off (1,024 tokens). Thinking makes each step slow on
+  a small GPU (~8 min per step on a 4 GB GTX 1650); `qwen3:4b-instruct` is the fast alternative.
 - **tools** node: LangGraph `ToolNode` with eight tools: `search_records`, `create_lead`,
   `update_lead`, `create_company`, `create_contact`, `log_activity`, `add_note`, `create_task`.
   Each builds the normal Pydantic `*Create`/`*Update` schema and calls the route function, so

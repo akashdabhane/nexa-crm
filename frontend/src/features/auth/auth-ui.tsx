@@ -21,7 +21,7 @@ export function FormError({ message }: { message: string | null }) {
 
 export function FormSuccess({ message }: { message: string }) {
   return (
-    <div role="status" className="flex gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+    <div role="status" className="flex gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
       <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
       <p>{message}</p>
     </div>

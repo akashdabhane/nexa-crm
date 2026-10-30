@@ -37,15 +37,35 @@ def _gemini(model: str) -> BaseChatModel:
     return ChatGoogleGenerativeAI(model=model, google_api_key=settings.gemini_api_key, max_retries=1, timeout=40)
 
 
+_thinking_models: dict[str, bool] = {}
+
+
+def _is_thinking_model(model: str) -> bool:
+    """Whether Ollama reports the model as a "thinking" one (e.g. qwen3:4b, which is Qwen3-4B-Thinking-2507).
+
+    Those can't switch thinking off (they reason in the reply text instead), so we turn it on and LangChain keeps
+    the reasoning out of the answer. Only successful lookups are cached; if Ollama is down, the chat call reports it.
+    """
+    if model not in _thinking_models:
+        try:
+            capabilities = ollama.Client(host=settings.ollama_base_url).show(model).capabilities or []
+        except (ollama.ResponseError, httpx.HTTPError, ConnectionError):
+            return False
+        _thinking_models[model] = "thinking" in capabilities
+    return _thinking_models[model]
+
+
 def _ollama() -> BaseChatModel:
+    thinks = _is_thinking_model(settings.ollama_model)
     return ChatOllama(
         model=settings.ollama_model,
         base_url=settings.ollama_base_url,
-        # Qwen3 "thinks" before answering by default; off is much faster on a local machine.
-        reasoning=False,
+        reasoning=thinks,
         # Ollama's default context window is too small for the prompt, tool schemas and chat history.
         num_ctx=8192,
-        temperature=0,
+        # Cap each reply so a model that starts repeating itself can't hang the request (thinking needs more room).
+        num_predict=4096 if thinks else 1024,
+        # No temperature override: Qwen3 loops on greedy decoding (temperature 0); its Ollama defaults avoid that.
     )
 
 

@@ -9,12 +9,12 @@ import type { AppNotification, NotificationType } from "@/types";
 import { formatRelative } from "@/utils/format";
 
 const ICONS: Record<NotificationType, { icon: LucideIcon; className: string }> = {
-  lead_assigned: { icon: Target, className: "bg-sky-100 text-sky-700" },
-  deal_assigned: { icon: Handshake, className: "bg-indigo-100 text-indigo-700" },
-  task_assigned: { icon: ListTodo, className: "bg-violet-100 text-violet-700" },
-  task_due: { icon: AlarmClock, className: "bg-amber-100 text-amber-800" },
-  deal_won: { icon: Trophy, className: "bg-emerald-100 text-emerald-700" },
-  deal_lost: { icon: XCircle, className: "bg-rose-100 text-rose-700" },
+  lead_assigned: { icon: Target, className: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300" },
+  deal_assigned: { icon: Handshake, className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300" },
+  task_assigned: { icon: ListTodo, className: "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300" },
+  task_due: { icon: AlarmClock, className: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300" },
+  deal_won: { icon: Trophy, className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" },
+  deal_lost: { icon: XCircle, className: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" },
 };
 
 export function NotificationItem({
