@@ -249,3 +249,12 @@ def test_chat_requires_gemini_key_and_a_user_message(client, rep, monkeypatch):
     only_assistant = {"messages": [{"role": "assistant", "content": "Hi"}]}
     assert client.post("/api/assistant/chat", json=only_assistant, headers=auth_headers(rep)).status_code == 422
     assert client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "x"}]}).status_code == 401
+
+
+def test_empty_model_answer_is_not_reported_as_done(client, rep, monkeypatch):
+    use_model(monkeypatch, [reply("")])
+    assert "couldn't work out" in send(client, rep, "Hmm").json()["reply"]
+
+    use_model(monkeypatch, [calls(("create_lead", {"name": "Jane Doe"})), reply("")])
+    body = send(client, rep, "Add Jane Doe").json()
+    assert body["reply"] == "I saved the records below." and len(body["records"]) == 1

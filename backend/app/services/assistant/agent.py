@@ -138,5 +138,11 @@ def chat(db: Session, user: Profile, messages: list[ChatMessage]) -> dict:
             return {"reply": f"I saved the records below, but then hit a problem. {error}", "records": saved}
         raise bad_gateway(error)
 
-    answer = state_messages[-1]
-    return {"reply": answer.text or "Done.", "records": _saved_records(state_messages)}
+    records = _saved_records(state_messages)
+    if reply := state_messages[-1].text:
+        return {"reply": reply, "records": records}
+    # The model stopped without a word (small local models sometimes spend their whole budget thinking).
+    if records:
+        return {"reply": "I saved the records below.", "records": records}
+    reply = "Sorry, I couldn't work out what to save from that. Could you try again or rephrase it?"
+    return {"reply": reply, "records": []}
