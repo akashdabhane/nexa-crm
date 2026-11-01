@@ -104,7 +104,8 @@ export function AssistantSheet() {
             )}
           </div>
           <SheetDescription>
-            Tell me about your calls, emails and new prospects in your own words. I&apos;ll save them to the CRM.
+            Tell me about your calls, emails and new prospects in your own words. I&apos;ll save them to the CRM. You
+            can also ask me about any lead, contact or company.
           </SheetDescription>
         </SheetHeader>
 
@@ -138,32 +139,38 @@ export function AssistantSheet() {
           <div ref={bottomRef} />
         </div>
 
-        <form
-          className="flex items-end gap-2 border-t p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            send(draft);
-          }}
-        >
-          <Textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                send(draft);
-              }
+        <div className="space-y-2 border-t p-3">
+          <form
+            className="flex items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              send(draft);
             }}
-            placeholder="E.g. Cold-called Jane Doe from Acme today…"
-            aria-label="Message the AI assistant"
-            className="max-h-40 min-h-10 resize-none"
-            maxLength={8000}
-            autoFocus
-          />
-          <Button type="submit" size="icon" disabled={!draft.trim() || chat.isPending} aria-label="Send">
-            <SendHorizontal className="size-4" />
-          </Button>
-        </form>
+          >
+            <Textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  send(draft);
+                }
+              }}
+              placeholder="E.g. Cold-called Jane Doe from Acme today…"
+              aria-label="Message the AI assistant"
+              aria-describedby="assistant-disclaimer"
+              className="max-h-40 min-h-10 resize-none"
+              maxLength={8000}
+              autoFocus
+            />
+            <Button type="submit" size="icon" disabled={!draft.trim() || chat.isPending} aria-label="Send">
+              <SendHorizontal className="size-4" />
+            </Button>
+          </form>
+          <p id="assistant-disclaimer" className="text-center text-xs text-muted-foreground">
+            AI can make mistakes. Please cross-check its answers and the records it saves.
+          </p>
+        </div>
       </SheetContent>
     </Sheet>
   );
