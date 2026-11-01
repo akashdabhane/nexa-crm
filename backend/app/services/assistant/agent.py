@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.exceptions import bad_gateway
 from app.models import Profile
+from app.models.enums import UserRole
 from app.schemas.assistant import ChatMessage, SavedRecord
 from app.services.assistant.llm import MODEL_ERRORS, build_chat_model
 from app.services.assistant.tools import TOOLS
@@ -37,9 +38,9 @@ logger = logging.getLogger("nexa_crm")
 # Upper bound on model round-trips per user message (each round may call several tools).
 MAX_STEPS = 10
 
-SYSTEM_PROMPT = """You are the NexaCRM assistant for {name}. The user tells you, in their own words, about their \
+SYSTEM_PROMPT = """You are the NexaCRM assistant for {name} ({role}). The user tells you, in their own words, about their \
 sales work: new prospects, calls, emails, meetings, follow-ups. Record it accurately in the CRM with your tools, \
-then confirm briefly.
+then confirm briefly. The user also asks you about what is already in the CRM; look it up and answer.
 
 Today is {today:%A, %Y-%m-%d}. Resolve relative dates ("next Tuesday") against it; write dates as YYYY-MM-DD. \
 The coming days: {coming_days}.
@@ -59,10 +60,33 @@ when there is genuine interest or budget, "unqualified" when it's not a fit; sco
 - Never invent names, emails, phone numbers or facts. If you don't know a person's name, ask for it instead of \
 creating a record.
 - If a tool returns an error, fix the arguments and retry, or tell the user what went wrong.
+- You act with the user's own permissions, and the tools enforce them. {permissions} If a tool says the user isn't \
+allowed to do something, tell them so; never work around it, e.g. by creating a duplicate record instead.
+
+How to answer questions about the CRM ("what's Vikram's phone number?", "tell me about Acme", "what did we \
+discuss with Priya?"):
+- Search with search_records using just the name (or email, phone, company). Its results already include phone \
+numbers and emails, so a contact-detail question can be answered from them directly.
+- For anything more (company details, its contacts, past calls and meetings, notes, open tasks, deals), call \
+get_record_details with the record's type and id.
+- Answer only from what the tools returned. Never guess or make up a phone number, email or any other detail. If \
+nothing matches, or the field is empty, say so plainly. If several records match, list them briefly or ask which \
+one is meant.
+- Answering a question saves nothing, so don't call any create, update, log or add tool for it.
 
 Reply style: short, friendly plain text (no Markdown). After saving, sum up in one or two sentences what you \
-recorded; the app shows links to the saved records, so don't list IDs. If the user is only chatting or asking a \
-question, answer without saving anything. Ask at most one clarifying question at a time."""
+recorded; the app shows links to the saved records, so don't list IDs. When answering a question, give the \
+facts asked for, one per line when there are several, without IDs. If the user is only chatting, answer without \
+saving anything. Ask at most one clarifying question at a time."""
+
+
+ROLE_NAMES = {UserRole.ADMIN: "admin", UserRole.MANAGER: "sales manager", UserRole.SALES_REP: "sales rep"}
+# Mirrors the role rules in app/services/permissions.py, so the model can explain a refusal before the tool gives one.
+REP_PERMISSIONS = (
+    "As a sales rep they can create records (always owned by themselves) and change only records they own; "
+    "they can't change records owned by teammates."
+)
+MANAGER_PERMISSIONS = "As a manager/admin they can create and change any record."
 
 
 def _without_reasoning(messages: list[AnyMessage]) -> list[AnyMessage]:
@@ -129,7 +153,14 @@ def chat(db: Session, user: Profile, messages: list[ChatMessage]) -> dict:
     today = date.today()
     # Small local models get weekday arithmetic wrong, so spell out the next week.
     coming_days = ", ".join(f"{day:%A} {day:%Y-%m-%d}" for day in (today + timedelta(days=n) for n in range(1, 8)))
-    system = SystemMessage(SYSTEM_PROMPT.format(name=user.full_name, today=today, coming_days=coming_days))
+    prompt = SYSTEM_PROMPT.format(
+        name=user.full_name,
+        role=ROLE_NAMES[user.role],
+        permissions=MANAGER_PERMISSIONS if user.is_manager_or_admin else REP_PERMISSIONS,
+        today=today,
+        coming_days=coming_days,
+    )
+    system = SystemMessage(prompt)
     history = [system, *(_to_message(message) for message in messages)]
     config = {
         "configurable": {"db": db, "user": user},  # handed to the tools, never to the model

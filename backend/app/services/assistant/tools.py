@@ -17,12 +17,12 @@ from fastapi import HTTPException
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from pydantic import Field, ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy.orm import Session
 
-from app.api.routes import activities, companies, contacts, leads, notes, tasks
-from app.models import Company, Contact, Lead, Profile
-from app.models.enums import ActivityType, LeadSource, TaskPriority
+from app.api.routes import activities, companies, contacts, leads, notes, tasks, timeline
+from app.models import Company, Contact, Deal, Lead, Profile, Task
+from app.models.enums import ActivityType, LeadSource, TaskPriority, TaskStatus
 from app.schemas.activity import ActivityCreate
 from app.schemas.assistant import SavedRecord
 from app.schemas.company import CompanyCreate
@@ -30,7 +30,7 @@ from app.schemas.contact import ContactCreate
 from app.schemas.lead import LeadCreate, LeadUpdate
 from app.schemas.note import NoteCreate
 from app.schemas.task import TaskCreate
-from app.utils.query import search_filter
+from app.utils.query import get_or_404, search_filter
 
 ToolResult = tuple[str, SavedRecord | None]
 
@@ -40,6 +40,11 @@ Score = Annotated[int | None, Field(ge=0, le=100, description="How promising the
 LeadId = Annotated[str | None, "ID of the lead this belongs to"]
 ContactId = Annotated[str | None, "ID of the contact this belongs to"]
 CompanyId = Annotated[str | None, "ID of the company this belongs to"]
+
+# How much get_record_details hands the model: enough to answer "what did we discuss?", small enough for a local
+# model's context window.
+TIMELINE_LIMIT = 10
+RELATED_LIMIT = 20
 
 
 def _given(**fields) -> dict:
@@ -80,30 +85,138 @@ def _parent_link(record) -> tuple[str, uuid.UUID | None]:
     return "activity", None
 
 
+def _words_match(term: str, *columns) -> ColumnElement[bool]:
+    """Every word of the term appears in one of the columns, so "Khadse Vikram" still finds Vikram Khadse."""
+    return and_(*(search_filter(word, *columns) for word in term.split() or [""]))
+
+
+def _fields(record, *names: str) -> dict:
+    """The record's filled-in fields, so the model isn't handed a wall of nulls."""
+    return {name: value for name in names if (value := getattr(record, name)) not in (None, "", [])}
+
+
 @tool(response_format="content_and_artifact")
 def search_records(
     query: Annotated[str, "A name, email, phone or company to look for"], config: RunnableConfig
 ) -> ToolResult:
-    """Find existing leads, contacts and companies by name, email or phone. Use before creating."""
+    """Find existing leads, contacts and companies by name, email or phone, with their phone and email.
+
+    Use before creating, and to look up someone's phone number or email.
+    """
 
     def action(db: Session, _user: Profile):
         term = query.strip()
         contact_name = func.concat_ws(" ", Contact.first_name, Contact.last_name)
-        lead_match = search_filter(term, Lead.name, Lead.email, Lead.phone, Lead.company_name)
+        lead_match = _words_match(term, Lead.name, Lead.email, Lead.phone, Lead.company_name)
         found_leads = db.scalars(select(Lead).where(lead_match).limit(5)).unique()
-        contact_match = search_filter(term, contact_name, Contact.email, Contact.phone)
+        contact_match = _words_match(term, contact_name, Contact.email, Contact.phone)
         found_contacts = db.scalars(select(Contact).where(contact_match).limit(5)).unique()
-        found_companies = db.scalars(select(Company).where(search_filter(term, Company.name)).limit(5)).unique()
+        company_match = _words_match(term, Company.name, Company.email, Company.phone, Company.website)
+        found_companies = db.scalars(select(Company).where(company_match).limit(5)).unique()
         return {
             "leads": [
-                {"id": l.id, "name": l.name, "email": l.email, "company": l.company_name, "status": l.status}
+                {**_fields(l, "id", "name", "email", "phone", "status"), "company": l.company_name}
                 for l in found_leads
             ],
             "contacts": [
-                {"id": c.id, "name": c.full_name, "email": c.email, "company": c.company.name if c.company else None}
+                {**_fields(c, "id", "email", "phone", "job_title"), "name": c.full_name, "company": _name(c.company)}
                 for c in found_contacts
             ],
-            "companies": [{"id": c.id, "name": c.name} for c in found_companies],
+            "companies": [_fields(c, "id", "name", "industry", "email", "phone", "website") for c in found_companies],
+        }, None
+
+    return _run(config, action)
+
+
+def _name(record) -> str | None:
+    """Display name of an optional related company or owner."""
+    if record is None:
+        return None
+    return record.full_name if isinstance(record, Profile) else record.name
+
+
+def _timeline(db: Session, user: Profile, **record: uuid.UUID) -> list[dict]:
+    """Recent calls, meetings, emails and notes on a record, newest first (what its page shows)."""
+    entries = []
+    for item in timeline.get_timeline(**record, limit=TIMELINE_LIMIT, _=user, db=db):
+        if activity := item.activity:
+            entries.append(
+                {
+                    "type": activity.type,
+                    "when": f"{activity.occurred_at:%Y-%m-%d %H:%M}",
+                    "subject": activity.subject,
+                    "details": activity.description,
+                }
+            )
+        else:
+            entries.append({"type": "note", "when": f"{item.note.created_at:%Y-%m-%d}", "details": item.note.body})
+    return entries
+
+
+def _open_tasks(db: Session, condition: ColumnElement[bool]) -> list[dict]:
+    is_open = Task.status.in_((TaskStatus.PENDING, TaskStatus.IN_PROGRESS))
+    stmt = select(Task).where(condition, is_open).order_by(Task.due_date.nulls_last()).limit(RELATED_LIMIT)
+    return [_fields(t, "title", "due_date", "priority", "status") for t in db.scalars(stmt).unique()]
+
+
+def _deals(db: Session, condition: ColumnElement[bool]) -> list[dict]:
+    stmt = select(Deal).where(condition).order_by(Deal.created_at.desc()).limit(RELATED_LIMIT)
+    return [
+        {**_fields(d, "name", "value", "currency", "status", "expected_close_date"), "stage": d.stage.name}
+        for d in db.scalars(stmt).unique()
+    ]
+
+
+@tool(response_format="content_and_artifact")
+def get_record_details(
+    record_type: Annotated[Literal["lead", "contact", "company"], "What kind of record"],
+    record_id: Annotated[str, "ID of the record, from search_records"],
+    config: RunnableConfig,
+) -> ToolResult:
+    """Everything stored about one lead, contact or company: its details, recent calls, meetings, emails and notes,
+    open tasks and deals (and a company's contacts). Use it to answer questions about a record."""
+
+    def action(db: Session, user: Profile):
+        record_uuid = uuid.UUID(record_id)
+        if record_type == "lead":
+            lead = get_or_404(db, Lead, record_uuid, "Lead")
+            details = _fields(lead, "name", "email", "phone", "company_name", "source", "status", "score")
+            return {
+                "lead": {**details, "owner": _name(lead.owner), "added": f"{lead.created_at:%Y-%m-%d}"},
+                "recent_activity": _timeline(db, user, lead_id=lead.id),
+            }, None
+
+        if record_type == "contact":
+            contact = get_or_404(db, Contact, record_uuid, "Contact")
+            details = _fields(
+                contact, "email", "phone", "job_title", "website", "address", "city", "country", "status", "tags"
+            )
+            return {
+                "contact": {
+                    "name": contact.full_name,
+                    **details,
+                    "company": _name(contact.company),
+                    "owner": _name(contact.owner),
+                },
+                "recent_activity": _timeline(db, user, contact_id=contact.id),
+                "open_tasks": _open_tasks(db, Task.contact_id == contact.id),
+                "deals": _deals(db, Deal.contact_id == contact.id),
+            }, None
+
+        company = get_or_404(db, Company, record_uuid, "Company")
+        details = _fields(
+            company, "name", "industry", "website", "email", "phone", "address", "city", "country", "employee_count"
+        )
+        people = select(Contact).where(Contact.company_id == company.id).order_by(Contact.first_name)
+        return {
+            "company": {**details, "owner": _name(company.owner)},
+            "contacts": [
+                {"name": c.full_name, **_fields(c, "job_title", "email", "phone")}
+                for c in db.scalars(people.limit(RELATED_LIMIT)).unique()
+            ],
+            "recent_activity": _timeline(db, user, company_id=company.id),
+            "open_tasks": _open_tasks(db, Task.company_id == company.id),
+            "deals": _deals(db, Deal.company_id == company.id),
         }, None
 
     return _run(config, action)
@@ -291,4 +404,14 @@ def create_task(
     return _run(config, action)
 
 
-TOOLS = [search_records, create_lead, update_lead, create_company, create_contact, log_activity, add_note, create_task]
+TOOLS = [
+    search_records,
+    get_record_details,
+    create_lead,
+    update_lead,
+    create_company,
+    create_contact,
+    log_activity,
+    add_note,
+    create_task,
+]

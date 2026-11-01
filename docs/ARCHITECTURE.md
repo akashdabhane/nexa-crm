@@ -475,9 +475,11 @@ POST /api/assistant/chat ──▶ chat(db, user, messages)
   replies capped at 6,144 tokens, 10k context); otherwise off (1,024 tokens, 8k context). Earlier
   steps' reasoning is stripped before each model call so it isn't replayed into the context.
   A full message takes ~10 min on a 4 GB GTX 1650; `qwen3:4b-instruct` is the fast alternative.
-- **tools** node: LangGraph `ToolNode` with eight tools: `search_records`, `create_lead`,
-  `update_lead`, `create_company`, `create_contact`, `log_activity`, `add_note`, `create_task`.
-  Each builds the normal Pydantic `*Create`/`*Update` schema and calls the route function, so
+- **tools** node: LangGraph `ToolNode` with nine tools. Two read: `search_records` (leads,
+  contacts and companies by name/email/phone, with phone and email, so "what's X's number?"
+  takes one call) and `get_record_details` (one record with its timeline, open tasks, deals and,
+  for a company, its contacts). Seven write: `create_lead`, `update_lead`, `create_company`,
+  `create_contact`, `log_activity`, `add_note`, `create_task`. Each write tool builds the normal Pydantic `*Create`/`*Update` schema and calls the route function, so
   permissions (a rep can't update another rep's lead), audit entries and notifications are
   identical to the UI. Each save is committed immediately.
 - The DB session and user travel in the LangGraph run config (`configurable`), which the model

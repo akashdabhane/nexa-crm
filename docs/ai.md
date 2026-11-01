@@ -32,8 +32,8 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 | **Task** | To-do with `due_date`, `priority` (low/medium/high/urgent), `status` (pending/in_progress/completed/cancelled), `due_notified` flag. |
 | **Notification** | Per-user in-app message: `lead_assigned`, `deal_assigned`, `task_assigned`, `task_due`, `deal_won`, `deal_lost`. |
 | **Audit log** | Append-only `audit_logs` row: `action` like `deal.stage_changed`, `entity_type`, `entity_id`, JSONB `details` (`name`, `changes: {field: [old, new]}`, `from`/`to`). |
-| **AI assistant** | The chat panel (`features/assistant/assistant-sheet.tsx`) backed by `POST /api/assistant/chat` and the LangGraph agent in `app/services/assistant/`. Turns free text into CRM records. |
-| **Tool** | A LangChain `@tool` in `app/services/assistant/tools.py` (`search_records`, `create_lead`, `update_lead`, `create_company`, `create_contact`, `log_activity`, `add_note`, `create_task`). Returns `(content, artifact)`. |
+| **AI assistant** | The chat panel (`features/assistant/assistant-sheet.tsx`) backed by `POST /api/assistant/chat` and the LangGraph agent in `app/services/assistant/`. Turns free text into CRM records and answers questions about stored leads, contacts and companies. |
+| **Tool** | A LangChain `@tool` in `app/services/assistant/tools.py` (`search_records`, `get_record_details`, `create_lead`, `update_lead`, `create_company`, `create_contact`, `log_activity`, `add_note`, `create_task`). Returns `(content, artifact)`; read-only tools return no artifact. |
 | **SavedRecord** | A tool's artifact: `{type, action, id, label, link_type, link_id}`. Returned to the UI as links and sent back with later messages so the model can refer to them. |
 | **LLM provider** | `LLM_PROVIDER` = `gemini` (Google Gemini via `GEMINI_API_KEY`, with `GEMINI_FALLBACK_MODEL`) or `ollama` (local model). |
 
@@ -70,6 +70,7 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 - Tools **must call the existing route/service functions** with the normal Pydantic schemas, never write models directly, so permissions, validation, audit and notifications stay identical to the UI.
 - The DB session and user come from the LangGraph `configurable` config; they're never exposed to the model. Tools run sequentially (`max_concurrency=1`) because they share one session.
 - Each successful tool call commits on its own; a failing one is rolled back and its error returned to the model as `{"error": …}` data. Records saved before a later failure are still reported to the user.
+- The assistant acts with the signed-in user's role: tools receive that user and call the route functions, whose permission checks (`ensure_can_edit`, `owner_for_create`) run as for the UI. Tools expose no `owner_id`. Role **dependencies** (`require_manager`/`require_admin`) do **not** run when a route function is called directly, so tools must not call such routes (enforced by `test_tools_only_call_routes_open_to_every_role`).
 - The model can't set `status=converted` (`OpenLeadStatus`), can't link tasks to leads (tasks have no `lead_id`), and has no tools for deals, conversion or deletes.
 - The server is stateless: requests carry the whole conversation (1–50 messages, last one from the user, ≤ 8,000 chars each).
 - Errors: missing `GEMINI_API_KEY` → **503**; model failure with nothing saved → **502** with a human-readable reason. At most 10 model rounds per message (`MAX_STEPS`).

@@ -1,9 +1,12 @@
 """The AI assistant (LangGraph agent), with the chat model replaced by a scripted fake."""
 
+import ast
+import inspect
 import json
 from datetime import date, timedelta
 from typing import Any
 
+from fastapi import params
 from langchain_core.exceptions import ModelAPIError, ModelRateLimitError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
@@ -13,8 +16,11 @@ from langchain_ollama import ChatOllama
 from pydantic import Field
 
 from app.core.config import settings
-from app.models import Activity, AuditLog, Lead, Task
-from app.services.assistant import llm
+from app.db.session import get_db
+from app.dependencies.auth import get_current_user
+from app.models import Activity, AuditLog, Company, Contact, Lead, Note, Task
+from app.services.assistant import llm, tools
+from app.services.assistant.tools import TOOLS
 from tests.conftest import auth_headers
 
 
@@ -131,6 +137,71 @@ def test_chat_creates_lead_activity_and_task(client, db, rep, monkeypatch):
     assert [m.type for m in final_request[-2:]] == ["tool", "tool"]
 
 
+def test_chat_answers_questions_from_the_crm(client, db, rep, other_rep, monkeypatch):
+    company = Company(
+        name="Khadse Industries", industry="Manufacturing", phone="+91 20 5555 0100", owner_id=other_rep.id
+    )
+    db.add(company)
+    db.flush()
+    vikram = Contact(
+        first_name="Vikram", last_name="Khadse", phone="+91 98765 43210", job_title="CTO", company_id=company.id
+    )
+    db.add_all([vikram, Contact(first_name="Vikram", last_name="Rao")])
+    db.flush()
+    db.add_all(
+        [
+            Activity(type="meeting", subject="Demo", description="Wants SSO before signing", contact_id=vikram.id),
+            Note(body="Budget approved for Q1", company_id=company.id),
+            Task(title="Send SSO docs", contact_id=vikram.id, due_date=date.today()),
+            Task(title="Old task", contact_id=vikram.id, status="completed"),
+        ]
+    )
+    db.commit()
+    response = client.post(
+        "/api/deals",
+        json={"name": "Khadse rollout", "value": 5000, "company_id": str(company.id), "contact_id": str(vikram.id)},
+        headers=auth_headers(rep),
+    )
+    assert response.status_code == 201, response.text
+
+    model = use_model(
+        monkeypatch,
+        [
+            calls(("search_records", {"query": "Khadse Vikram"})),  # words in any order
+            calls(("get_record_details", {"record_type": "contact", "record_id": str(vikram.id)})),
+            calls(("get_record_details", {"record_type": "company", "record_id": str(company.id)})),
+            calls(("get_record_details", {"record_type": "lead", "record_id": str(company.id)})),
+            reply("Vikram Khadse: +91 98765 43210"),
+        ],
+    )
+
+    response = send(client, rep, "Give me the phone number of Vikram Khadse and tell me about his company")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"reply": "Vikram Khadse: +91 98765 43210", "records": []}  # lookups save nothing
+
+    found = last_tool_result(model.calls[1])
+    assert [(c["name"], c["phone"], c["company"]) for c in found["contacts"]] == [
+        ("Vikram Khadse", "+91 98765 43210", "Khadse Industries")
+    ]
+    assert found["companies"] == []  # "Vikram" isn't in the company's name
+
+    contact = last_tool_result(model.calls[2])
+    assert contact["contact"]["job_title"] == "CTO" and "email" not in contact["contact"]  # empty fields left out
+    assert contact["recent_activity"][0]["details"] == "Wants SSO before signing"
+    assert [t["title"] for t in contact["open_tasks"]] == ["Send SSO docs"]
+    assert [(d["name"], d["stage"]) for d in contact["deals"]] == [("Khadse rollout", "New")]
+
+    details = last_tool_result(model.calls[3])
+    assert details["company"]["phone"] == "+91 20 5555 0100" and details["company"]["owner"] == other_rep.full_name
+    assert [c["name"] for c in details["contacts"]] == ["Vikram Khadse"]
+    # A company's history includes what was logged on its contacts.
+    assert {e["details"] for e in details["recent_activity"]} == {"Wants SSO before signing", "Budget approved for Q1"}
+    assert [d["name"] for d in details["deals"]] == ["Khadse rollout"]
+
+    assert "Lead not found" in last_tool_result(model.calls[4])["error"]
+
+
 def test_tool_errors_are_returned_to_the_model(client, db, rep, monkeypatch):
     model = use_model(
         monkeypatch,
@@ -165,9 +236,83 @@ def test_reps_cannot_update_other_reps_leads_via_chat(client, db, rep, other_rep
     )
 
     assert send(client, rep, "Mark Theirs as qualified").status_code == 200
+    assert "(sales rep)" in model.calls[0][0].content and "owned by teammates" in model.calls[0][0].content
     assert "assigned to you" in last_tool_result(model.calls[1])["error"]
     db.refresh(lead)
     assert lead.status == "new"
+
+
+def test_managers_can_update_any_lead_via_chat(client, db, manager, rep, monkeypatch):
+    lead = Lead(name="Rep's lead", owner_id=rep.id)
+    db.add(lead)
+    db.commit()
+    model = use_model(
+        monkeypatch,
+        [calls(("update_lead", {"lead_id": str(lead.id), "status": "qualified"})), reply("Marked it qualified.")],
+    )
+
+    body = send(client, manager, "Mark Rep's lead as qualified").json()
+
+    assert [(r["type"], r["action"]) for r in body["records"]] == [("lead", "updated")]
+    db.refresh(lead)
+    assert (lead.status, lead.owner_id) == ("qualified", rep.id)
+    assert "(sales manager)" in model.calls[0][0].content and "change any record" in model.calls[0][0].content
+
+
+def test_records_created_via_chat_belong_to_the_user(client, db, rep, monkeypatch):
+    use_model(
+        monkeypatch,
+        [
+            calls(("create_company", {"name": "Acme"})),
+            calls(("create_contact", {"first_name": "Jane"})),
+            calls(("create_task", {"title": "Call Jane"})),
+            reply("Done"),
+        ],
+    )
+
+    records = send(client, rep, "Add Jane from Acme and remind me to call her").json()["records"]
+
+    models = {"company": Company, "contact": Contact, "task": Task}
+    assert {db.get(models[r["type"]], r["id"]).owner_id for r in records} == {rep.id}
+
+
+def test_tools_cannot_pick_an_owner():
+    """Owner assignment is left to the route (reps always own what they create), never to the model."""
+    for tool in TOOLS:
+        assert not {"owner_id", "created_by_id"} & set(tool.tool_call_schema.model_json_schema()["properties"])
+
+
+def test_tools_only_call_routes_open_to_every_role():
+    """A role check declared as a route dependency (require_manager/require_admin) doesn't run when a tool calls the
+    route function directly, so tools may only call routes that check permissions in their body."""
+    route_modules = {
+        name
+        for name, value in vars(tools).items()
+        if inspect.ismodule(value) and value.__name__.startswith("app.api.routes.")
+    }
+    called = {
+        (node.func.value.id, node.func.attr)
+        for node in ast.walk(ast.parse(inspect.getsource(tools)))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id in route_modules
+    }
+    assert ("leads", "update_lead") in called
+
+    for module, name in called:
+        for param in inspect.signature(getattr(getattr(tools, module), name)).parameters.values():
+            if isinstance(param.default, params.Depends):
+                assert param.default.dependency in (get_current_user, get_db), f"{module}.{name} needs a role"
+
+
+def test_deactivated_users_cannot_use_the_assistant(client, db, rep, monkeypatch):
+    model = use_model(monkeypatch, [reply("Hi")])
+    rep.is_active = False
+    db.commit()
+
+    assert send(client, rep, "Hello").status_code == 403
+    assert model.calls == []
 
 
 def test_history_includes_previously_saved_records(client, rep, monkeypatch):

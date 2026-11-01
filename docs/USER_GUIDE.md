@@ -208,6 +208,16 @@ The assistant will:
 - save background such as budget or needs as a **note**;
 - update a lead's **status and score** when your story implies it (e.g. Contacted, Qualified).
 
+You can also **ask about what's already in the CRM**, for example:
+
+> What's Vikram Khadse's phone number?
+>
+> Tell me about Brightwave. What did we discuss with them last time?
+
+It looks the records up and answers from them: phone numbers and emails, company details, a company's contacts,
+recent calls, meetings and notes, open tasks and deals. If nothing matches, it says so rather than guessing.
+Questions don't save anything.
+
 Each reply lists what was saved as links; click one to open the record. Click a suggestion to start, press
 **Enter** to send (**Shift+Enter** for a new line), and **New chat** to start over. The conversation is kept while
 you move between pages, but not after a page reload.
