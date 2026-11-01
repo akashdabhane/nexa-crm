@@ -9,7 +9,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
     <div className="grid min-h-svh lg:grid-cols-2">
       <div className="flex flex-col gap-6 p-6 md:p-10">
         <div className="flex items-center justify-between">
-          <Logo />
+          <Logo href="/" />
           <ThemeToggle />
         </div>
         <div className="flex flex-1 items-center justify-center">

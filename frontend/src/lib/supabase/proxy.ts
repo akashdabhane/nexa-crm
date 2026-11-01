@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from "./config";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/auth"];
+// "/" is the public landing page; signed-in users are sent on to the dashboard below.
+const PUBLIC_PATHS = ["/", "/login", "/signup", "/forgot-password", "/auth"];
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 
 const matches = (pathname: string, paths: string[]) =>

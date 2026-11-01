@@ -65,11 +65,26 @@ recorded; the app shows links to the saved records, so don't list IDs. If the us
 question, answer without saving anything. Ask at most one clarifying question at a time."""
 
 
+def _without_reasoning(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """Drop earlier steps' thinking (Ollama's `reasoning_content`) before calling the model again.
+
+    Otherwise a thinking model gets its own multi-thousand-token reasoning replayed every step, which overflows a
+    small context window and slows everything down. The state keeps the full messages; only the request is trimmed.
+    """
+    trimmed = []
+    for message in messages:
+        if isinstance(message, AIMessage) and "reasoning_content" in message.additional_kwargs:
+            kwargs = {k: v for k, v in message.additional_kwargs.items() if k != "reasoning_content"}
+            message = message.model_copy(update={"additional_kwargs": kwargs})
+        trimmed.append(message)
+    return trimmed
+
+
 def build_graph() -> CompiledStateGraph:
     model = build_chat_model(TOOLS)
 
     def agent(state: MessagesState) -> dict:
-        return {"messages": [model.invoke(state["messages"])]}
+        return {"messages": [model.invoke(_without_reasoning(state["messages"]))]}
 
     graph = StateGraph(MessagesState)
     graph.add_node("agent", agent)

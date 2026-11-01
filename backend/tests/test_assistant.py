@@ -262,3 +262,13 @@ def test_empty_model_answer_is_not_reported_as_done(client, rep, monkeypatch):
     use_model(monkeypatch, [calls(("create_lead", {"name": "Jane Doe"})), reply("")])
     body = send(client, rep, "Add Jane Doe").json()
     assert body["reply"] == "I saved the records below." and len(body["records"]) == 1
+
+
+def test_earlier_thinking_is_not_sent_back_to_the_model(client, rep, monkeypatch):
+    thinking_step = tool_calls(("search_records", {"query": "Jane"}))
+    thinking_step.additional_kwargs["reasoning_content"] = "Let me think... " * 500
+    model = use_model(monkeypatch, [lambda _: thinking_step, reply("No Jane yet.")])
+
+    assert send(client, rep, "Do I have Jane?").json()["reply"] == "No Jane yet."
+    previous_step = model.calls[1][-2]
+    assert previous_step.tool_calls and "reasoning_content" not in previous_step.additional_kwargs

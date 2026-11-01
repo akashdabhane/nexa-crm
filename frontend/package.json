@@ -1,12 +1,23 @@
 {
   "name": "frontend",
   "version": "0.1.0",
+  "description": "NexaCRM web app: an AI-powered CRM for small sales teams (contacts, leads, deals, Kanban pipeline, reports).",
+  "keywords": [
+    "crm",
+    "sales-crm",
+    "ai-crm",
+    "sales-pipeline",
+    "lead-management",
+    "nextjs"
+  ],
+  "author": "Akash Dabhane",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

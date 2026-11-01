@@ -30,6 +30,7 @@ Settings are loaded by `app/core/config.py` (pydantic-settings). **Process envir
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://<ref>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | publishable/anon key (safe for the browser) |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api` |
+| `NEXT_PUBLIC_SITE_URL` | `https://crm.example.com` (canonical URLs, sitemap, social images) |
 
 `NEXT_PUBLIC_*` values are **inlined at build time** — rebuild after changing them. Without the Supabase values the
 login page shows a "Supabase is not configured" notice instead of crashing.

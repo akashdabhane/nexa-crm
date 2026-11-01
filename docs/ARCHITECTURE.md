@@ -468,12 +468,13 @@ POST /api/assistant/chat ──▶ chat(db, user, messages)
 - **agent** node: the chat model from `build_chat_model` (`llm.py`) with the tools bound.
   `LLM_PROVIDER=gemini` → `ChatGoogleGenerativeAI` (`GEMINI_MODEL`, 40s timeout, one retry,
   then `GEMINI_FALLBACK_MODEL` on rate-limit/API/timeout/connection errors);
-  `LLM_PROVIDER=ollama` → `ChatOllama` (`OLLAMA_MODEL`, 8k context, the model's default
-  temperature because Qwen3 loops at temperature 0). Thinking follows the model: `qwen3:4b` is
+  `LLM_PROVIDER=ollama` → `ChatOllama` (`OLLAMA_MODEL`, the model's default temperature because
+  Qwen3 loops at temperature 0). Thinking follows the model: `qwen3:4b` is
   Qwen3-4B-Thinking-2507, which can't stop thinking (it reasons in the reply instead), so when
   Ollama reports the `thinking` capability it's turned on (reasoning kept out of the reply,
-  replies capped at 4,096 tokens); otherwise off (1,024 tokens). Thinking makes each step slow on
-  a small GPU (~8 min per step on a 4 GB GTX 1650); `qwen3:4b-instruct` is the fast alternative.
+  replies capped at 6,144 tokens, 10k context); otherwise off (1,024 tokens, 8k context). Earlier
+  steps' reasoning is stripped before each model call so it isn't replayed into the context.
+  A full message takes ~10 min on a 4 GB GTX 1650; `qwen3:4b-instruct` is the fast alternative.
 - **tools** node: LangGraph `ToolNode` with eight tools: `search_records`, `create_lead`,
   `update_lead`, `create_company`, `create_contact`, `log_activity`, `add_note`, `create_task`.
   Each builds the normal Pydantic `*Create`/`*Update` schema and calls the route function, so
@@ -547,6 +548,7 @@ AI assistant: `langgraph`, `langchain`, `langchain-google-genai`, `langchain-oll
 | `frontend/.env.local` | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | publishable (anon) key — safe for the browser |
 | | `NEXT_PUBLIC_API_URL` | e.g. `http://localhost:8000/api` |
+| | `NEXT_PUBLIC_SITE_URL` | public origin for canonical URLs, sitemap and social images (default `http://localhost:3000`) |
 
 No service-role key is needed anywhere, so no secret ever reaches the browser.
 The Gemini API key stays in `backend/.env`; the browser only talks to FastAPI.

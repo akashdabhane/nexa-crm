@@ -1,6 +1,17 @@
-# NexaCRM
+<p align="center">
+  <img src="frontend/public/icon-192.png" alt="NexaCRM logo" width="72" height="72">
+</p>
 
-A full-stack CRM for small sales teams: contacts, companies, leads, deals, a Kanban sales pipeline,
+<h1 align="center">NexaCRM</h1>
+
+<p align="center">
+  <strong>The AI-powered CRM for small sales teams.</strong><br>
+  Contacts, companies, leads and deals · drag-and-drop sales pipeline · tasks and activity tracking · sales reports · AI sales assistant
+</p>
+
+---
+
+NexaCRM is a full-stack **customer relationship management (CRM)** web app for small sales teams: contacts, companies, leads, deals, a Kanban sales pipeline,
 activities, tasks, notes, notifications, reports, an audit log, and an **AI assistant** that turns plain-language
 notes about your sales work into CRM records. It's inspired by the core of HubSpot and kept simple enough to
 understand end to end.
@@ -216,8 +227,28 @@ docker compose up --build
 | `frontend/.env.local` | `NEXT_PUBLIC_SUPABASE_URL` | Project URL |
 | | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable/anon key (safe in the browser) |
 | | `NEXT_PUBLIC_API_URL` | e.g. `http://localhost:8000/api` |
+| | `NEXT_PUBLIC_SITE_URL` | Public origin of the site, e.g. `https://crm.example.com`. Used for canonical URLs, `sitemap.xml`, `robots.txt` and social preview images. Default `http://localhost:3000` |
 | `.env` (compose, from `.env.example`) | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_SECRET` | Supabase values for both containers |
+| | `SITE_URL` | Passed to the frontend build as `NEXT_PUBLIC_SITE_URL` |
 | | `LLM_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | Passed to the backend container; same meaning as in `backend/.env`, except `OLLAMA_BASE_URL` defaults to `http://host.docker.internal:11434` |
+
+### SEO and branding
+
+The signed-in CRM is private, so search engines only see the public pages: the landing page at `/` (signed-in
+users are redirected to `/dashboard`), `/login` and `/signup`.
+
+- **Metadata:** titles, descriptions, keywords, canonical URLs, Open Graph and Twitter cards, all built from one
+  config file, `frontend/src/lib/site.ts`. Every page under `(app)/`, plus password reset, is marked `noindex`.
+- **Structured data:** the landing page includes schema.org `WebSite` and `SoftwareApplication` JSON-LD.
+- **Crawling:** `robots.txt` (`src/app/robots.ts`) allows the public pages and blocks the private CRM routes;
+  `sitemap.xml` (`src/app/sitemap.ts`) lists the public pages.
+- **Social preview:** `src/app/opengraph-image.tsx` renders the 1200×630 share image at build time.
+- **Icons and PWA:** `favicon.ico`, `icon.svg`, `apple-icon.png` and the web-manifest icons are all generated from
+  one logo mark by `npm run icons` (`frontend/scripts/generate-icons.mjs`). `src/app/manifest.ts` serves the web
+  app manifest.
+
+In production, set `NEXT_PUBLIC_SITE_URL` to your real domain before building, then submit
+`https://<your-domain>/sitemap.xml` in Google Search Console and Bing Webmaster Tools.
 
 ### Migrations
 
