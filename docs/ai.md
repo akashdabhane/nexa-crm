@@ -32,7 +32,7 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 | **Task** | To-do with `due_date`, `priority` (low/medium/high/urgent), `status` (pending/in_progress/completed/cancelled), `due_notified` flag. |
 | **Notification** | Per-user in-app message: `lead_assigned`, `deal_assigned`, `task_assigned`, `task_due`, `deal_won`, `deal_lost`. |
 | **Audit log** | Append-only `audit_logs` row: `action` like `deal.stage_changed`, `entity_type`, `entity_id`, JSONB `details` (`name`, `changes: {field: [old, new]}`, `from`/`to`). |
-| **AI assistant** | The chat panel (`features/assistant/assistant-sheet.tsx`) backed by `POST /api/assistant/chat` and the LangGraph agent in `app/services/assistant/`. Turns free text into CRM records and answers questions about stored leads, contacts and companies. |
+| **AI assistant** | The chat panel (`features/assistant/assistant-sheet.tsx`) backed by `POST /api/assistant/chat` and the LangGraph agent in `app/services/assistant/`. Turns free text into CRM records and answers questions about stored leads, contacts and companies. Voice input: the mic button records a clip, `POST /api/assistant/transcribe` turns it into text with Whisper (`speech.py`). |
 | **Tool** | A LangChain `@tool` in `app/services/assistant/tools.py` (`search_records`, `get_record_details`, `create_lead`, `update_lead`, `create_company`, `create_contact`, `log_activity`, `add_note`, `create_task`). Returns `(content, artifact)`; read-only tools return no artifact. |
 | **SavedRecord** | A tool's artifact: `{type, action, id, label, link_type, link_id}`. Returned to the UI as links and sent back with later messages so the model can refer to them. |
 | **LLM provider** | `LLM_PROVIDER` = `gemini` (Google Gemini via `GEMINI_API_KEY`, with `GEMINI_FALLBACK_MODEL`) or `ollama` (local model). |
@@ -98,6 +98,7 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 - **Do not use Docker** for local work unless asked — the user runs PostgreSQL 18 locally (port 5432) and the backend via `uvicorn` directly.
 - **Do not introduce SQLite** (tests and app rely on PostgreSQL features: `ARRAY`, `JSONB`, `date_trunc`, `FILTER`).
 - **Do not run `python -m scripts.seed`** (any mode) against `nexa_crm`: it holds the user's real CRM data, and `--reset`/`--clear` delete it.
+- **Do not load a real Whisper model in tests**: patch `speech._load_model` with a fake, as `backend/tests/test_assistant_voice.py` does.
 - **Do not call a real LLM from tests.** Use the `ScriptedModel` fake in `backend/tests/test_assistant.py`. The Gemini free tier allows only a few requests per day (around 20 for Flash), so do live assistant checks sparingly, and only against the `nexa_crm_test` database.
 - **Do not claim something works without running it.** If you couldn't verify (e.g. a signed-in browser flow), say so.
 

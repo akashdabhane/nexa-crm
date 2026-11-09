@@ -12,3 +12,7 @@ export function useAssistantChat() {
     },
   });
 }
+
+export function useTranscribe() {
+  return useMutation({ mutationFn: assistantService.transcribe });
+}

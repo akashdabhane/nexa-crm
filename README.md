@@ -296,7 +296,7 @@ Interactive docs at **`/docs`** (Swagger) and `/redoc`. All endpoints are under 
 | Dashboard & reports | `GET /dashboard/summary`, `GET /reports/{lead-conversion, pipeline, revenue, win-loss, rep-performance, lead-sources}?start_date=&end_date=` |
 | Notifications | `GET /notifications`, `GET /notifications/unread-count`, `PATCH /notifications/{id}/read`, `POST /notifications/read-all` |
 | Audit log | `GET /audit-logs` (manager/admin) |
-| AI assistant | `POST /assistant/chat` with `{ messages: [{ role, content, records? }] }` (≤ 50 messages, last one from the user) → `{ reply, records }` |
+| AI assistant | `POST /assistant/chat` with `{ messages: [{ role, content, records? }] }` (≤ 50 messages, last one from the user) → `{ reply, records }`; `POST /assistant/transcribe` with a voice recording as the raw body (`Content-Type: audio/webm`, ≤ 10 MB) → `{ text }` |
 
 List endpoints accept `page`, `page_size` (≤100), `search`, `sort_by`, `sort_order` plus resource filters, and
 return `{ items, total, page, page_size, pages }`. Errors are `{ "detail": "…" }` with 400/401/403/404/409/422;

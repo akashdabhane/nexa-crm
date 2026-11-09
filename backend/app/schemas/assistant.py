@@ -39,3 +39,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     records: list[SavedRecord]
+
+
+class TranscriptionResponse(BaseModel):
+    text: str  # empty when no speech was heard

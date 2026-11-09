@@ -3,14 +3,17 @@
 import {
   Activity,
   Building2,
+  Check,
   CheckSquare,
   Loader2,
+  Mic,
   RotateCcw,
   SendHorizontal,
   Sparkles,
   StickyNote,
   Target,
   User,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,7 +28,13 @@ import { cn } from "@/lib/utils";
 import { entityHref } from "@/services/notifications";
 import type { AssistantMessage, AssistantRecord } from "@/types";
 
-import { useAssistantChat } from "./hooks";
+import { useAssistantChat, useTranscribe } from "./hooks";
+import { microphoneErrorMessage, useVoiceRecorder } from "./use-voice-recorder";
+import { VoiceLevel } from "./voice-level";
+
+function formatDuration(seconds: number) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
 const RECORD_ICONS: Record<AssistantRecord["type"], LucideIcon> = {
   lead: Target,
@@ -51,11 +60,58 @@ export function AssistantSheet() {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [draft, setDraft] = useState("");
   const chat = useAssistantChat();
+  const transcription = useTranscribe();
+  const recorder = useVoiceRecorder({ onLimit: () => finishVoice("review") });
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const transcribing = transcription.isPending;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, chat.isPending]);
+
+  // While recording: Enter sends what was said, Escape discards it (like the chat box's own Enter).
+  useEffect(() => {
+    if (!recorder.recording) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        finishVoice("send");
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
+  async function startVoice() {
+    try {
+      await recorder.start();
+    } catch (error) {
+      toast.error(microphoneErrorMessage(error));
+    }
+  }
+
+  /** Stop recording and turn it into text: sent straight away, or put in the box to check and edit first. */
+  async function finishVoice(then: "send" | "review") {
+    const audio = await recorder.stop();
+    if (!audio) return;
+    transcription.mutate(audio, {
+      onSuccess: (text) => {
+        if (!text) {
+          toast.info("I didn't catch that. Try again, a little closer to the microphone.");
+          return;
+        }
+        const message = draft.trim() ? `${draft.trim()} ${text}` : text;
+        if (then === "send" && !chat.isPending) {
+          send(message);
+        } else {
+          setDraft(message);
+          textareaRef.current?.focus();
+        }
+      },
+      onError: (error) => toast.error(getErrorMessage(error, "Couldn't turn your recording into text")),
+    });
+  }
 
   function send(text: string) {
     const content = text.trim();
@@ -76,14 +132,29 @@ export function AssistantSheet() {
   }
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) recorder.cancel(); // never keep listening behind a closed panel
+        setOpen(next);
+      }}
+    >
       <SheetTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           <Sparkles className="size-4 text-primary" />
           <span className="hidden sm:inline">AI Assistant</span>
         </Button>
       </SheetTrigger>
-      <SheetContent className="gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+      <SheetContent
+        className="gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md"
+        onEscapeKeyDown={(event) => {
+          // Escape while recording cancels the recording, not the whole panel.
+          if (recorder.recording) {
+            event.preventDefault();
+            recorder.cancel();
+          }
+        }}
+      >
         <SheetHeader className="border-b pr-12">
           <div className="flex items-center justify-between gap-2">
             <SheetTitle className="flex items-center gap-2">
@@ -144,29 +215,106 @@ export function AssistantSheet() {
             className="flex items-end gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              send(draft);
+              if (recorder.recording) finishVoice("send");
+              else send(draft);
             }}
           >
-            <Textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  send(draft);
+            {recorder.recording || transcribing ? (
+              <div
+                role="status"
+                className="flex min-h-10 flex-1 items-center gap-2.5 rounded-md border border-input px-3 text-sm"
+              >
+                {recorder.stream ? (
+                  <>
+                    <VoiceLevel stream={recorder.stream} />
+                    <span>Listening…</span>
+                    <span className="ml-auto text-muted-foreground tabular-nums">
+                      {formatDuration(recorder.seconds)}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    <span className="text-muted-foreground">Turning your voice into text…</span>
+                  </>
+                )}
+              </div>
+            ) : (
+              <Textarea
+                ref={textareaRef}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    send(draft);
+                  }
+                }}
+                placeholder="E.g. Cold-called Jane Doe from Acme today…"
+                aria-label="Message the AI assistant"
+                aria-describedby="assistant-disclaimer"
+                className="max-h-40 min-h-10 resize-none"
+                maxLength={8000}
+                autoFocus
+              />
+            )}
+
+            {recorder.recording ? (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={recorder.cancel}
+                  aria-label="Cancel recording"
+                  title="Cancel (Esc)"
+                >
+                  <X className="size-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => finishVoice("review")}
+                  aria-label="Stop and edit the text before sending"
+                  title="Stop and edit before sending"
+                >
+                  <Check className="size-4" />
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={startVoice}
+                disabled={!recorder.supported || transcribing}
+                aria-label="Speak your message"
+                title={
+                  recorder.supported
+                    ? "Speak your message"
+                    : "Voice input needs a secure (https) page and a browser that can record audio"
                 }
-              }}
-              placeholder="E.g. Cold-called Jane Doe from Acme today…"
-              aria-label="Message the AI assistant"
-              aria-describedby="assistant-disclaimer"
-              className="max-h-40 min-h-10 resize-none"
-              maxLength={8000}
-              autoFocus
-            />
-            <Button type="submit" size="icon" disabled={!draft.trim() || chat.isPending} aria-label="Send">
+              >
+                <Mic className="size-4" />
+              </Button>
+            )}
+            <Button
+              type="submit"
+              size="icon"
+              disabled={recorder.recording ? false : !draft.trim() || chat.isPending || transcribing}
+              aria-label="Send"
+              title={recorder.recording ? "Send what you said (Enter)" : "Send (Enter)"}
+            >
               <SendHorizontal className="size-4" />
             </Button>
           </form>
+          {recorder.recording && (
+            <p className="text-center text-xs text-muted-foreground">
+              Press <kbd className="font-medium">Enter</kbd> to send, <Check className="inline size-3" /> to edit the
+              text first, or <kbd className="font-medium">Esc</kbd> to cancel.
+            </p>
+          )}
           <p id="assistant-disclaimer" className="text-center text-xs text-muted-foreground">
             AI can make mistakes. Please cross-check its answers and the records it saves.
           </p>

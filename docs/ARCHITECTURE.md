@@ -402,6 +402,7 @@ the assistant adds 502 (the model failed) and 503 (Gemini selected but no API ke
 | | `PATCH /api/notifications/{id}/read`, `POST /api/notifications/read-all` | |
 | Audit log | `GET /api/audit-logs` | **manager/admin**; filters: entity_type, user_id, action, date range |
 | AI assistant | `POST /api/assistant/chat` | body `{ messages: [{role, content, records?}] }` (1–50 messages, the last from the user, ≤ 8,000 chars each) → `{ reply, records }` |
+| | `POST /api/assistant/transcribe` | raw audio body (`audio/webm`, `audio/ogg` or `audio/mp4`, ≤ 10 MB) → `{ text }` (empty if no speech); 503 if voice input is off or the model can't load |
 
 ### What triggers notifications / audit logs
 
@@ -452,7 +453,7 @@ it saved anything, because it may have touched any list, detail or timeline.
 
 ## 6b. AI assistant
 
-Files: `backend/app/services/assistant/{agent,tools,llm}.py`, `app/schemas/assistant.py`,
+Files: `backend/app/services/assistant/{agent,tools,llm,speech}.py`, `app/schemas/assistant.py`,
 `app/api/routes/assistant.py`; frontend `features/assistant/`, `services/assistant.ts`.
 
 ```
@@ -497,6 +498,17 @@ POST /api/assistant/chat ──▶ chat(db, user, messages)
   **leads**, every described call/email/meeting is logged, promised follow-ups become tasks,
   never invent names or contact details, ask one clarifying question at a time.
 - Not available through chat today: deals, lead conversion, deletes, and reports.
+
+**Voice input.** The mic button in the chat box records a clip in the browser (`MediaRecorder`,
+Opus in WebM, or MP4 on Safari; `features/assistant/use-voice-recorder.ts`, max 2 minutes) and
+posts it to `POST /api/assistant/transcribe`. `speech.py` runs open-source Whisper with
+faster-whisper (CTranslate2; PyAV decodes the clip) on the API server, so audio never leaves your
+own infrastructure and nothing is stored. The model loads once, on first use. `vad_filter` skips
+silence (where Whisper tends to invent text), and the names of the 20 most recently updated
+contacts, leads and companies each are passed as `hotwords`, so unusual names come out spelled
+the way the CRM has them ("Khadse", not "Kodsi") and the assistant can find the record. Enter
+while recording sends the text straight to the chat; ✓ puts it in the box to edit first; Esc
+cancels. Transcription is the only voice step: the reply is still text.
 
 ---
 

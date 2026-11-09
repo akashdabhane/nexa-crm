@@ -18,6 +18,9 @@ checks below have been run and passed.
 | `GEMINI_MODEL` | optional | Default `gemini-3.5-flash-lite` (much larger free-tier daily quota than Flash) |
 | `GEMINI_FALLBACK_MODEL` | optional | Default `gemini-3.5-flash`; tried on rate-limit/overload/timeout errors. Empty disables it |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | optional | Default `http://localhost:11434` / `qwen3:4b` (run `ollama pull qwen3:4b` first) |
+| `WHISPER_MODEL` | optional | Voice input's Whisper model: default `base` (~145 MB, ~1–2 s per question on CPU); `small` is more accurate but ~3x slower. Downloaded to the Hugging Face cache (`~/.cache/huggingface`) on first use, so give containers a persistent cache or expect a one-off download. Empty → `/api/assistant/transcribe` answers 503 |
+| `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE` | optional | Default `cpu` / `int8`. `cuda` + `float16` on a GPU (default CPU leaves the GPU to Ollama) |
+| `WHISPER_LANGUAGE` | optional | Default `en`; empty auto-detects (unreliable on short clips) |
 | `TEST_DATABASE_URL` | optional | Defaults to `DATABASE_URL` with the DB name replaced by `nexa_crm_test` |
 
 Settings are loaded by `app/core/config.py` (pydantic-settings). **Process environment variables override `.env`**

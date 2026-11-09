@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
 
+    # Voice input (/api/assistant/transcribe): open-source Whisper via faster-whisper, run on this server.
+    # Model size: tiny, base, small, medium, large-v3 (downloaded on first use); bigger is more accurate but slower.
+    # Empty turns voice input off.
+    whisper_model: str = "base"
+    whisper_device: Literal["cpu", "cuda", "auto"] = "cpu"  # "cpu" leaves the GPU to Ollama
+    whisper_compute_type: str = "int8"  # int8 is fast on CPU; use float16 on a GPU
+    whisper_language: str = "en"  # language code the user speaks; empty auto-detects (less reliable on short clips)
+
     @field_validator("database_url")
     @classmethod
     def use_psycopg_driver(cls, url: str) -> str:

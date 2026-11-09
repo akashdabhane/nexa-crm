@@ -218,6 +218,17 @@ It looks the records up and answers from them: phone numbers and emails, company
 recent calls, meetings and notes, open tasks and deals. If nothing matches, it says so rather than guessing.
 Questions don't save anything.
 
+**Talk instead of typing.** Click the **microphone** next to the message box (your browser asks for microphone
+access the first time) and speak. While it's listening you'll see moving bars and a timer:
+
+- press **Enter** (or the send button) to send what you said straight to the assistant;
+- click **✓** to put the text in the box first, so you can check or fix it before sending;
+- press **Esc** (or **✕**) to throw the recording away.
+
+Your voice is turned into text on NexaCRM's own server; it isn't stored. Names already in your CRM are recognised
+best, so say them the way they're saved. A recording can be up to 2 minutes. The microphone needs a secure page
+(https, or localhost while developing).
+
 Each reply lists what was saved as links; click one to open the record. Click a suggestion to start, press
 **Enter** to send (**Shift+Enter** for a new line), and **New chat** to start over. The conversation is kept while
 you move between pages, but not after a page reload.
