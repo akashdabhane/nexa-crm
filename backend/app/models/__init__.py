@@ -7,6 +7,7 @@ from app.models.company import Company
 from app.models.contact import Contact
 from app.models.deal import Deal
 from app.models.lead import Lead
+from app.models.lead_integration import LeadIntegration
 from app.models.note import Note
 from app.models.notification import Notification
 from app.models.pipeline import Pipeline, PipelineStage
@@ -21,6 +22,7 @@ __all__ = [
     "Contact",
     "Deal",
     "Lead",
+    "LeadIntegration",
     "Note",
     "Notification",
     "Pipeline",

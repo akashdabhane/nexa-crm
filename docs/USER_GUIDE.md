@@ -109,6 +109,19 @@ Referral, Advertisement, Social media, Email, Cold call, Other), **Status** and 
 The list filters by status, source and owner. Work a lead by moving its status: **New → Contacted → Qualified** (or **Unqualified** if it's a dead end).
 Log calls and notes on the lead as you go.
 
+**Importing leads from social media.** Leads can come in by themselves:
+
+- **Settings → Lead sources** (admins): *Connect source* → **Meta Lead Ads** with your Facebook Page ID and
+  Page access token. Every Facebook *and* Instagram lead-form submission on that Page becomes a lead within
+  seconds; *Sync now* pulls older ones. Or choose **Webhook** to get a secret URL for X, LinkedIn, TikTok,
+  YouTube, WhatsApp… — in Zapier/Make/n8n, use the platform's "new lead" trigger with a "POST webhook" action.
+- **Leads → Import**: upload the CSV you downloaded from Meta Leads Center, LinkedIn Campaign Manager or
+  TikTok, pick the platform, check the preview, and import.
+
+Imported leads get status *New*, source *Social media*, a platform badge and handle, and the owner you chose
+(who is notified). Extra form answers (budget, message, campaign…) are saved as a note on the lead. Leads that
+already exist (same email, or the same platform lead id) are skipped. Filter the list by **Platform**.
+
 **Converting a lead** (button on the lead's page) — when a lead becomes a real opportunity:
 
 - A **Contact** is created from the lead's name, email and phone.

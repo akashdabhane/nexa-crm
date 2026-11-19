@@ -37,6 +37,26 @@ class LeadSource(StrEnum):
     OTHER = "other"
 
 
+class SocialPlatform(StrEnum):
+    """Where a social lead came from (Lead.social_platform, LeadIntegration.platform)."""
+
+    FACEBOOK = "facebook"
+    INSTAGRAM = "instagram"
+    TWITTER = "twitter"  # X
+    LINKEDIN = "linkedin"
+    TIKTOK = "tiktok"
+    YOUTUBE = "youtube"
+    WHATSAPP = "whatsapp"
+    OTHER = "other"
+
+
+class IntegrationKind(StrEnum):
+    # Native Meta Lead Ads: Facebook and Instagram lead forms on one Facebook Page.
+    META_LEAD_ADS = "meta_lead_ads"
+    # Generic inbound webhook (Zapier, Make, n8n, a custom script, ...): works for any platform.
+    WEBHOOK = "webhook"
+
+
 class StageType(StrEnum):
     OPEN = "open"
     WON = "won"

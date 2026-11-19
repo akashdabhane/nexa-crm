@@ -5,17 +5,19 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { FormField } from "@/components/shared/form-field";
+import { PLATFORM_LABELS } from "@/components/shared/platform-badge";
 import { UserSelect } from "@/components/shared/user-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { LEAD_SOURCES, LEAD_STATUSES, type Lead, type LeadInput } from "@/types";
+import { LEAD_SOURCES, LEAD_STATUSES, SOCIAL_PLATFORMS, type Lead, type LeadInput } from "@/types";
 import { humanize } from "@/utils/format";
 
 import { leadHooks } from "./hooks";
 
+const NO_PLATFORM = "none";
 const EDITABLE_STATUSES = LEAD_STATUSES.filter((status) => status !== "converted");
 
 const schema = z.object({
@@ -27,6 +29,8 @@ const schema = z.object({
   status: z.enum(LEAD_STATUSES),
   score: z.number({ error: "Enter a score" }).int().min(0, "0–100").max(100, "0–100"),
   owner_id: z.string().nullable(),
+  social_platform: z.enum([...SOCIAL_PLATFORMS, NO_PLATFORM]),
+  social_handle: z.string().max(255),
 });
 type Values = z.infer<typeof schema>;
 
@@ -40,6 +44,8 @@ function toValues(lead?: Lead): Values {
     status: lead?.status ?? "new",
     score: lead?.score ?? 0,
     owner_id: lead?.owner?.id ?? null,
+    social_platform: lead?.social_platform ?? NO_PLATFORM,
+    social_handle: lead?.social_handle ?? "",
   };
 }
 
@@ -63,8 +69,13 @@ export function LeadFormDialog({ open, onOpenChange, lead, onSaved }: Props) {
   const isConverted = lead?.status === "converted";
 
   async function onSubmit(values: Values) {
-    const { owner_id, status, ...rest } = values;
-    const data: LeadInput = { ...rest, ...(isConverted ? {} : { status }), ...(isManager ? { owner_id } : {}) };
+    const { owner_id, status, social_platform, ...rest } = values;
+    const data: LeadInput = {
+      ...rest,
+      social_platform: social_platform === NO_PLATFORM ? null : social_platform,
+      ...(isConverted ? {} : { status }),
+      ...(isManager ? { owner_id } : {}),
+    };
     try {
       const saved = lead ? await update.mutateAsync({ id: lead.id, data }) : await create.mutateAsync(data);
       onSaved?.(saved);
@@ -113,6 +124,30 @@ export function LeadFormDialog({ open, onOpenChange, lead, onSaved }: Props) {
                 </Select>
               )}
             />
+          </FormField>
+          <FormField label="Social platform" htmlFor="social_platform">
+            <Controller
+              control={control}
+              name="social_platform"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="social_platform" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_PLATFORM}>None</SelectItem>
+                    {SOCIAL_PLATFORMS.map((platform) => (
+                      <SelectItem key={platform} value={platform}>
+                        {PLATFORM_LABELS[platform]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </FormField>
+          <FormField label="Social handle" htmlFor="social_handle" hint="@username or profile URL" error={errors.social_handle?.message}>
+            <Input id="social_handle" {...register("social_handle")} />
           </FormField>
           <FormField label="Status" htmlFor="status">
             <Controller

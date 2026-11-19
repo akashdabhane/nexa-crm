@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Target } from "lucide-react";
+import { Plus, Target, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { FilterSelect } from "@/components/shared/filter-select";
 import { OwnerCell } from "@/components/shared/owner-cell";
+import { PLATFORM_LABELS, PlatformBadge } from "@/components/shared/platform-badge";
 import { Pagination } from "@/components/shared/pagination";
 import { SearchInput } from "@/components/shared/search-input";
 import { EmptyState, ErrorState } from "@/components/shared/states";
@@ -16,10 +17,11 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { useUsers } from "@/components/shared/user-select";
 import { Button } from "@/components/ui/button";
 import { useListState } from "@/hooks/use-list-state";
-import { LEAD_SOURCES, LEAD_STATUSES, type Lead } from "@/types";
+import { LEAD_SOURCES, LEAD_STATUSES, SOCIAL_PLATFORMS, type Lead } from "@/types";
 import { formatDate, humanize } from "@/utils/format";
 
 import { leadHooks } from "./hooks";
+import { ImportLeadsDialog } from "./import-leads-dialog";
 import { LeadFormDialog } from "./lead-form-dialog";
 import { ScoreBar } from "./score-bar";
 
@@ -38,7 +40,12 @@ const columns: Column<Lead>[] = [
     ),
   },
   { key: "company", header: "Company", cell: (l) => l.company_name ?? "—" },
-  { key: "source", header: "Source", sortKey: "source", cell: (l) => humanize(l.source) },
+  {
+    key: "source",
+    header: "Source",
+    sortKey: "source",
+    cell: (l) => (l.social_platform ? <PlatformBadge platform={l.social_platform} /> : humanize(l.source)),
+  },
   { key: "status", header: "Status", sortKey: "status", cell: (l) => <StatusBadge value={l.status} /> },
   { key: "score", header: "Score", sortKey: "score", cell: (l) => <ScoreBar score={l.score} /> },
   { key: "owner", header: "Owner", cell: (l) => <OwnerCell owner={l.owner} /> },
@@ -48,7 +55,8 @@ const columns: Column<Lead>[] = [
 export function LeadsView() {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
-  const list = useListState({ filters: ["status", "source", "owner_id"] });
+  const [importOpen, setImportOpen] = useState(false);
+  const list = useListState({ filters: ["status", "source", "social_platform", "owner_id"] });
   const { data, isLoading, error, refetch } = leadHooks.useList(list.params);
   const { data: users = [] } = useUsers();
 
@@ -58,9 +66,14 @@ export function LeadsView() {
         title="Leads"
         description="Prospects to qualify and convert into customers."
         actions={
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus /> New lead
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload /> Import
+            </Button>
+            <Button onClick={() => setFormOpen(true)}>
+              <Plus /> New lead
+            </Button>
+          </>
         }
       />
 
@@ -77,6 +90,12 @@ export function LeadsView() {
           onChange={(v) => list.setFilter("source", v)}
           placeholder="All sources"
           options={LEAD_SOURCES.map((s) => ({ value: s, label: humanize(s) }))}
+        />
+        <FilterSelect
+          value={list.filters.social_platform}
+          onChange={(v) => list.setFilter("social_platform", v)}
+          placeholder="All platforms"
+          options={SOCIAL_PLATFORMS.map((p) => ({ value: p, label: PLATFORM_LABELS[p] }))}
         />
         <FilterSelect
           value={list.filters.owner_id}
@@ -117,6 +136,7 @@ export function LeadsView() {
         </>
       )}
 
+      <ImportLeadsDialog open={importOpen} onOpenChange={setImportOpen} />
       <LeadFormDialog open={formOpen} onOpenChange={setFormOpen} onSaved={(l) => router.push(`/leads/${l.id}`)} />
     </>
   );

@@ -1,3 +1,4 @@
+import csv
 import uuid
 
 from fastapi import APIRouter, Depends, Query, status
@@ -9,10 +10,12 @@ from app.db.session import get_db
 from app.dependencies.auth import get_current_user, require_manager
 from app.dependencies.pagination import ListParams, list_params
 from app.models import Lead, Profile
-from app.models.enums import LeadSource, LeadStatus, NotificationType
+from app.models.enums import LeadSource, LeadStatus, NotificationType, SocialPlatform
 from app.schemas.common import Page
 from app.schemas.lead import LeadConvert, LeadConvertResult, LeadCreate, LeadRead, LeadUpdate
+from app.schemas.lead_integration import CsvImport, ImportResult
 from app.services import audit, notifications
+from app.services import lead_import as importer
 from app.services import leads as lead_service
 from app.services.permissions import check_owner_change, ensure_can_edit, owner_for_create
 from app.utils.query import apply_sort, get_or_404, paginate, search_filter
@@ -34,6 +37,7 @@ def list_leads(
     params: ListParams = Depends(list_params),
     status_filter: LeadStatus | None = Query(None, alias="status"),
     source: LeadSource | None = None,
+    social_platform: SocialPlatform | None = None,
     owner_id: uuid.UUID | None = None,
     min_score: int | None = Query(None, ge=0, le=100),
     _: Profile = Depends(get_current_user),
@@ -41,11 +45,13 @@ def list_leads(
 ):
     stmt = select(Lead)
     if params.search:
-        stmt = stmt.where(search_filter(params.search, Lead.name, Lead.email, Lead.company_name, Lead.phone))
+        stmt = stmt.where(search_filter(params.search, Lead.name, Lead.email, Lead.company_name, Lead.phone, Lead.social_handle))
     if status_filter:
         stmt = stmt.where(Lead.status == status_filter)
     if source:
         stmt = stmt.where(Lead.source == source)
+    if social_platform:
+        stmt = stmt.where(Lead.social_platform == social_platform)
     if owner_id:
         stmt = stmt.where(Lead.owner_id == owner_id)
     if min_score is not None:
@@ -70,6 +76,45 @@ def create_lead(payload: LeadCreate, user: Profile = Depends(get_current_user), 
     db.commit()
     db.refresh(lead)
     return lead
+
+
+@router.post("/import", response_model=ImportResult)
+def import_leads(payload: CsvImport, user: Profile = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Bulk-create leads from a CSV/TSV export (Facebook, Instagram, LinkedIn, TikTok lead forms, ...).
+    `dry_run` validates and previews without saving."""
+    owner_id = owner_for_create(db, user, payload.owner_id)
+    try:
+        columns, rows = importer.parse_csv(payload.csv_text)
+    except (ValueError, csv.Error) as exc:
+        raise bad_request(f"Couldn't read the file: {exc}")
+    label = importer.PLATFORM_LABELS[payload.platform] + " " if payload.platform else ""
+    ctx = importer.ImportContext(
+        actor=user,
+        owner_id=owner_id,
+        default_score=payload.score,
+        default_platform=payload.platform,
+        via=f"a {label}CSV import by {user.full_name}",
+        channel="csv",
+        notify_each=False,
+    )
+    result = importer.import_rows(db, rows, ctx, dry_run=payload.dry_run)
+    result["columns"] = columns
+    if payload.dry_run:
+        return result
+    if result["created"]:
+        count = result["created"]
+        notifications.notify(
+            db,
+            user_id=owner_id,
+            type=NotificationType.LEAD_ASSIGNED,
+            title=f"{count} imported lead{'s' if count != 1 else ''} assigned to you",
+            message=f"{user.full_name} imported {count} {label}lead{'s' if count != 1 else ''} and assigned them to you.",
+            entity_type="lead",
+            entity_id=result["lead_ids"][0],
+            actor=user,
+        )
+    db.commit()
+    return result
 
 
 @router.get("/{lead_id}", response_model=LeadRead)

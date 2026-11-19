@@ -225,6 +225,21 @@ Application-side user record. `id` equals the Supabase auth user id.
 | owner_id, created_by_id | FK → profiles | |
 | converted_at | timestamptz | |
 | converted_contact_id / converted_company_id / converted_deal_id | FKs (SET NULL) | filled on conversion |
+| social_platform | varchar, indexed | facebook, instagram, twitter, linkedin, tiktok, youtube, whatsapp, other |
+| social_handle | varchar | @username or profile URL |
+| external_id | varchar | the platform's lead id; unique together with social_platform (de-duplication) |
+| integration_id | FK → lead_integrations (SET NULL) | which connection imported it |
+
+### lead_integrations
+| Column | Type | Notes |
+|---|---|---|
+| name, kind, platform | varchar | kind: `meta_lead_ads` or `webhook` |
+| is_active | bool | paused integrations reject webhook calls |
+| webhook_token | varchar, unique | secret part of `/api/integrations/webhooks/{token}` |
+| meta_page_id, meta_page_name | varchar | Meta only |
+| access_token_encrypted | text | Fernet-encrypted Page token (key from `INTEGRATIONS_SECRET`); never returned by the API |
+| default_owner_id, default_score | FK → profiles, int | applied to imported leads |
+| leads_imported, last_lead_at, last_synced_at, last_error | | status shown in Settings → Lead sources |
 
 ### pipelines / pipeline_stages
 | pipelines | | pipeline_stages | |
@@ -382,6 +397,10 @@ the assistant adds 502 (the model failed) and 503 (Gemini selected but no API ke
 | Contacts | `GET/POST /api/contacts`, `GET/PATCH/DELETE /api/contacts/{id}` | filters: status, company_id, owner_id, tag |
 | Leads | `GET/POST /api/leads`, `GET/PATCH/DELETE /api/leads/{id}` | filters: status, source, owner_id, min_score |
 | | `POST /api/leads/{id}/convert` | Lead → Contact + Company + Deal |
+| | `POST /api/leads/import` | CSV/TSV text → leads (`dry_run` previews); filters also accept `social_platform` |
+| Lead sources | `GET/POST /api/integrations`, `PATCH/DELETE /api/integrations/{id}`, `POST …/{id}/rotate-token`, `POST …/{id}/sync` | admin only; sync pulls a Meta Page's form leads |
+| | `POST /api/integrations/webhooks/{token}` | **public**, secret URL; body = lead object, list, or `{leads: [...]}` (≤ 100) |
+| | `GET/POST /api/integrations/meta/webhook` | **public**; Meta verify handshake / `X-Hub-Signature-256`-signed `leadgen` events |
 | Pipelines | `GET /api/pipelines` | pipelines with ordered stages |
 | | `POST /api/pipelines`, `PATCH /api/pipelines/stages/{id}` | **admin** |
 | Deals | `GET/POST /api/deals`, `GET/PATCH/DELETE /api/deals/{id}` | filters: pipeline_id, stage_id, status, owner_id, company_id, contact_id |
@@ -559,6 +578,9 @@ AI assistant: `langgraph`, `langchain`, `langchain-google-genai`, `langchain-oll
 | | `LLM_PROVIDER` | `gemini` (default) or `ollama` |
 | | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL` | Gemini settings (model defaults `gemini-3.5-flash-lite` / `gemini-3.5-flash`) |
 | | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | Ollama settings (defaults `http://localhost:11434` / `qwen3:4b`) |
+| | `INTEGRATIONS_SECRET` | Social lead imports: any long random string; encrypts stored Meta Page access tokens. Required for Meta Lead Ads |
+| | `META_APP_SECRET` / `META_VERIFY_TOKEN` | Meta app secret (verifies `leadgen` webhook signatures) and the verify token you type into the Meta webhook setup |
+| | `META_GRAPH_VERSION` | Graph API version, default `v26.0` |
 | `frontend/.env.local` | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | publishable (anon) key — safe for the browser |
 | | `NEXT_PUBLIC_API_URL` | e.g. `http://localhost:8000/api` |

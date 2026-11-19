@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import EmailStr, Field
 
-from app.models.enums import LeadSource, LeadStatus
+from app.models.enums import LeadSource, LeadStatus, SocialPlatform
 from app.schemas.common import InputSchema, ORMSchema
 from app.schemas.profile import ProfileSummary
 
@@ -18,6 +18,8 @@ class LeadCreate(InputSchema):
     status: LeadStatus = LeadStatus.NEW
     score: int = Field(0, ge=0, le=100)
     owner_id: uuid.UUID | None = None
+    social_platform: SocialPlatform | None = None
+    social_handle: str | None = Field(None, max_length=255)
 
 
 class LeadUpdate(InputSchema):
@@ -29,6 +31,8 @@ class LeadUpdate(InputSchema):
     status: LeadStatus | None = None
     score: int | None = Field(None, ge=0, le=100)
     owner_id: uuid.UUID | None = None
+    social_platform: SocialPlatform | None = None
+    social_handle: str | None = Field(None, max_length=255)
 
 
 class LeadRead(ORMSchema):
@@ -40,6 +44,9 @@ class LeadRead(ORMSchema):
     source: LeadSource
     status: LeadStatus
     score: int
+    social_platform: SocialPlatform | None
+    social_handle: str | None
+    integration_id: uuid.UUID | None
     owner: ProfileSummary | None
     converted_at: datetime | None
     converted_contact_id: uuid.UUID | None

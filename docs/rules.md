@@ -111,6 +111,7 @@ nexa-crm/
 - `Contact.name` property exists only so contacts fit the generic `EntityRef` schema.
 - Notes use `owner_id` for the author so the same `ensure_can_edit` rule applies.
 - `GET /api/pipelines` and `/deals/board` may create the default pipeline (lazy provisioning).
+- `POST /api/integrations/webhooks/{token}` and `/api/integrations/meta/webhook` have no `get_current_user`: their callers are automation tools and Meta. They're secured by the secret URL token / Meta's HMAC signature, and import with `actor=None` (audit `user_id` is null).
 - `GET /api/notifications*` may create `task_due` notifications (lazy reminders instead of a scheduler).
 - Assistant tools import and call route functions (`app.api.routes.leads.create_lead`, …) from a service. That's deliberate: one code path for UI and chat.
 - Each assistant tool commits on its own, so a chat that fails halfway keeps what it already saved (and says so).

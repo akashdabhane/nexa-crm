@@ -123,6 +123,9 @@ export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export const LEAD_SOURCES = ["website", "referral", "advertisement", "social_media", "email", "cold_call", "other"] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 
+export const SOCIAL_PLATFORMS = ["facebook", "instagram", "twitter", "linkedin", "tiktok", "youtube", "whatsapp", "other"] as const;
+export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
+
 export interface Lead extends Timestamps {
   id: string;
   name: string;
@@ -132,6 +135,9 @@ export interface Lead extends Timestamps {
   source: LeadSource;
   status: LeadStatus;
   score: number;
+  social_platform: SocialPlatform | null;
+  social_handle: string | null;
+  integration_id: string | null;
   owner: UserSummary | null;
   converted_at: string | null;
   converted_contact_id: string | null;
@@ -148,6 +154,8 @@ export interface LeadInput {
   status?: LeadStatus;
   score?: number;
   owner_id?: string | null;
+  social_platform?: SocialPlatform | null;
+  social_handle?: string | null;
 }
 
 export interface LeadConvertInput {
@@ -163,6 +171,78 @@ export interface LeadConvertResult {
   contact_id: string;
   company_id: string | null;
   deal_id: string | null;
+}
+
+// --- Social lead imports ----------------------------------------------------
+
+export type IntegrationKind = "meta_lead_ads" | "webhook";
+
+export interface LeadIntegration extends Timestamps {
+  id: string;
+  name: string;
+  kind: IntegrationKind;
+  platform: SocialPlatform;
+  is_active: boolean;
+  webhook_token: string;
+  meta_page_id: string | null;
+  meta_page_name: string | null;
+  has_access_token: boolean;
+  default_owner: UserSummary | null;
+  default_score: number;
+  leads_imported: number;
+  last_lead_at: string | null;
+  last_synced_at: string | null;
+  last_error: string | null;
+}
+
+export interface LeadIntegrationInput {
+  name?: string;
+  kind?: IntegrationKind;
+  platform?: SocialPlatform;
+  is_active?: boolean;
+  meta_page_id?: string | null;
+  /** Write-only: never returned by the API. */
+  access_token?: string | null;
+  default_owner_id?: string | null;
+  default_score?: number;
+}
+
+export interface IntegrationSetup {
+  meta_webhook_ready: boolean;
+  token_storage_ready: boolean;
+}
+
+export interface ImportIssue {
+  row: number;
+  name: string | null;
+  reason: string;
+}
+
+export interface LeadPreview {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  company_name: string | null;
+  social_platform: SocialPlatform | null;
+  social_handle: string | null;
+}
+
+export interface ImportResult {
+  created: number;
+  skipped: number;
+  failed: number;
+  lead_ids: string[];
+  issues: ImportIssue[];
+  preview: LeadPreview[];
+  columns: string[];
+}
+
+export interface CsvImportInput {
+  csv_text: string;
+  platform?: SocialPlatform | null;
+  owner_id?: string | null;
+  score?: number;
+  dry_run?: boolean;
 }
 
 // --- Pipelines & deals -------------------------------------------------------

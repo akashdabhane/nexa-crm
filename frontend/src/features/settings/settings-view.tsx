@@ -4,6 +4,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
+import { IntegrationsSettings } from "@/features/integrations/integrations-settings";
+
 import { AuditLogSettings } from "./audit-log-settings";
 import { PipelineSettings } from "./pipeline-settings";
 import { ProfileSettings } from "./profile-settings";
@@ -15,6 +17,7 @@ export function SettingsView() {
     { value: "profile", label: "Profile", content: <ProfileSettings />, show: true },
     { value: "users", label: "Users & roles", content: <UsersSettings />, show: isAdmin },
     { value: "pipeline", label: "Pipeline", content: <PipelineSettings />, show: isAdmin },
+    { value: "lead-sources", label: "Lead sources", content: <IntegrationsSettings />, show: isAdmin },
     { value: "audit", label: "Audit log", content: <AuditLogSettings />, show: isManager },
   ].filter((tab) => tab.show);
 

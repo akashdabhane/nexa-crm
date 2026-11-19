@@ -29,6 +29,7 @@ Alembic · PostgreSQL · Supabase Auth · LangGraph + LangChain (Google Gemini o
 | **Contacts** | CRUD, search (name/email/phone/title), filter by status/tag/owner, sort, paginate, tags, company link, activity timeline, deals, tasks, notes |
 | **Companies** | CRUD, industry/owner filters, contact & deal counts, open pipeline value, company-wide timeline (includes its contacts' activity) |
 | **Leads** | CRUD, status & source tracking, 0–100 lead score, **one-click conversion → Contact + Company + Deal** (matches an existing company by name, carries the lead's history over) |
+| **Social lead import** | Bring leads in from **Facebook & Instagram** lead ads (Meta Lead Ads: real-time webhook + “Sync now”), **X, LinkedIn, TikTok, YouTube, WhatsApp** and anything else through a secret webhook URL (Zapier/Make/n8n), or a **CSV/TSV export** (Leads → Import, with preview). Leads are tagged with their platform and handle, de-duplicated by email and platform lead id, assigned to a chosen owner, and extra form answers are saved as a note |
 | **Deals** | CRUD, list view with filters, clickable stage path, probability & weighted value, won/lost tracking |
 | **Pipeline** | **Kanban board** with drag-and-drop between stages (optimistic updates) plus a "Move to" menu for touch devices |
 | **Activities** | Log calls, meetings and emails against contacts, companies, leads and deals; chronological feed with type/owner/date filters |
@@ -223,6 +224,9 @@ docker compose up --build
 | | `GEMINI_API_KEY` | Google AI Studio key; required when `LLM_PROVIDER=gemini` |
 | | `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | Default `gemini-3.5-flash-lite` / `gemini-3.5-flash`; leave the fallback empty to disable it |
 | | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | Default `http://localhost:11434` / `qwen3:4b` |
+| | `INTEGRATIONS_SECRET` | Social lead imports: any long random string; encrypts stored Meta Page access tokens. Required for Meta Lead Ads |
+| | `META_APP_SECRET` / `META_VERIFY_TOKEN` | Meta app secret (verifies `leadgen` webhook signatures) and the verify token you type into the Meta webhook setup |
+| | `META_GRAPH_VERSION` | Graph API version, default `v26.0` |
 | | `TEST_DATABASE_URL` | Optional; tests default to `DATABASE_URL` with the database name `nexa_crm_test` |
 | `frontend/.env.local` | `NEXT_PUBLIC_SUPABASE_URL` | Project URL |
 | | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable/anon key (safe in the browser) |
@@ -280,14 +284,16 @@ See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for how to enter your data and use 
 ## API
 
 Interactive docs at **`/docs`** (Swagger) and `/redoc`. All endpoints are under `/api` and require
-`Authorization: Bearer <supabase access token>` except `/api/health`.
+`Authorization: Bearer <supabase access token>` except `/api/health` and the lead webhooks (secured by a secret URL token / Meta's HMAC signature).
 
 | Resource | Endpoints |
 |---|---|
 | Users | `GET/PATCH /me`, `GET /users`, `PATCH /users/{id}` (admin) |
 | Companies | `GET/POST /companies`, `GET/PATCH/DELETE /companies/{id}`, `GET /companies/options`, `GET /companies/industries` |
 | Contacts | `GET/POST /contacts`, `GET/PATCH/DELETE /contacts/{id}`, `GET /contacts/options`, `GET /contacts/tags` |
-| Leads | `GET/POST /leads`, `GET/PATCH/DELETE /leads/{id}`, `POST /leads/{id}/convert` |
+| Leads | `GET/POST /leads`, `GET/PATCH/DELETE /leads/{id}`, `POST /leads/{id}/convert`, `POST /leads/import` (CSV text, `dry_run` previews) |
+| Lead sources (admin) | `GET/POST /integrations`, `PATCH/DELETE /integrations/{id}`, `POST /integrations/{id}/rotate-token`, `POST /integrations/{id}/sync` (Meta), `GET /integrations/setup` |
+| Lead webhooks (**public**) | `POST /integrations/webhooks/{token}` (secret per-integration URL), `GET/POST /integrations/meta/webhook` (Meta verification + signed `leadgen` events) |
 | Pipelines | `GET /pipelines`, `POST /pipelines` (admin), `PATCH /pipelines/stages/{id}` (admin) |
 | Deals | `GET/POST /deals`, `GET/PATCH/DELETE /deals/{id}`, `PATCH /deals/{id}/stage`, `GET /deals/board` |
 | Activities / Notes | `GET/POST /activities`, `PATCH/DELETE /activities/{id}`; same for `/notes` |

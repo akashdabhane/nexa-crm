@@ -8,6 +8,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { DetailList } from "@/components/shared/detail-list";
 import { OwnerCell } from "@/components/shared/owner-cell";
+import { PlatformBadge } from "@/components/shared/platform-badge";
 import { RecordHeader } from "@/components/shared/record-header";
 import { DetailSkeleton, ErrorState } from "@/components/shared/states";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -84,6 +85,8 @@ export function LeadDetail({ id }: { id: string }) {
                 { label: "Phone", value: lead.phone },
                 { label: "Company", value: lead.company_name },
                 { label: "Source", value: humanize(lead.source) },
+                { label: "Platform", value: lead.social_platform ? <PlatformBadge platform={lead.social_platform} /> : null },
+                { label: "Social handle", value: lead.social_handle },
                 { label: "Score", value: <ScoreBar score={lead.score} /> },
                 { label: "Owner", value: <OwnerCell owner={lead.owner} /> },
                 { label: "Created", value: formatDate(lead.created_at) },

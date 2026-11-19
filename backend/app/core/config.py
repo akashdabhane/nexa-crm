@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     whisper_compute_type: str = "int8"  # int8 is fast on CPU; use float16 on a GPU
     whisper_language: str = "en"  # language code the user speaks; empty auto-detects (less reliable on short clips)
 
+    # Social lead imports (/api/integrations).
+    # Encrypts stored platform access tokens (Meta Page tokens). Any long random string; changing it
+    # makes saved tokens unreadable (re-enter them). Required only for Meta Lead Ads integrations.
+    integrations_secret: str = ""
+    # Meta app (developers.facebook.com) receiving the "leadgen" Page webhook for Facebook/Instagram lead ads.
+    meta_app_secret: str = ""  # App settings -> Basic -> App secret; verifies webhook signatures
+    meta_verify_token: str = ""  # any string; type the same one into the Meta webhook setup
+    meta_graph_version: str = "v26.0"
+
     @field_validator("database_url")
     @classmethod
     def use_psycopg_driver(cls, url: str) -> str:

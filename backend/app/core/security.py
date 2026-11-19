@@ -1,6 +1,10 @@
-"""Verification of Supabase-issued JWT access tokens."""
+"""Verification of Supabase-issued JWT access tokens, and encryption of stored integration secrets."""
+
+import base64
+import hashlib
 
 import jwt
+from cryptography.fernet import Fernet, InvalidToken
 from jwt import PyJWKClient
 
 from app.core.config import settings
@@ -55,3 +59,28 @@ def decode_supabase_token(token: str) -> dict:
         )
     except (jwt.PyJWTError, jwt.PyJWKClientError) as exc:
         raise TokenError(str(exc)) from exc
+
+
+# --- Stored third-party secrets (e.g. Meta Page access tokens) ---------------
+
+
+class SecretError(Exception):
+    """INTEGRATIONS_SECRET is missing, or a stored secret can't be decrypted with it."""
+
+
+def _fernet() -> Fernet:
+    if not settings.integrations_secret:
+        raise SecretError("INTEGRATIONS_SECRET is not configured on the server")
+    key = base64.urlsafe_b64encode(hashlib.sha256(settings.integrations_secret.encode()).digest())
+    return Fernet(key)
+
+
+def encrypt_secret(value: str) -> str:
+    return _fernet().encrypt(value.encode()).decode()
+
+
+def decrypt_secret(token: str) -> str:
+    try:
+        return _fernet().decrypt(token.encode()).decode()
+    except InvalidToken:
+        raise SecretError("The stored access token can't be decrypted (was INTEGRATIONS_SECRET changed?)")
