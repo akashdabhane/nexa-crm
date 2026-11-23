@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = ""
 
     # Comma-separated list, e.g. "http://localhost:3000,https://crm.example.com"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "https://nexa-crm-eta.vercel.app/"
 
     # AI assistant (/api/assistant): which chat model answers. "gemini" (Google, needs an API key) or "ollama" (local).
     llm_provider: Literal["gemini", "ollama"] = "gemini"
