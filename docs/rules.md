@@ -10,27 +10,32 @@ nexa-crm/
 ├── backend/app/
 │   ├── main.py                 # app factory, CORS, global exception handlers
 │   ├── core/                   # config.py (settings), security.py (JWT), exceptions.py (HTTP error helpers)
-│   ├── db/                     # base.py (Base, UUIDPrimaryKeyMixin, TimestampMixin), session.py (engine, get_db)
+│   ├── db/                     # base.py (Base, UUIDPrimaryKeyMixin, TimestampMixin), session.py (engine, get_db),
+│   │                           # tenancy.py (OrgScopedMixin, set_current_org, organization scoping events)
 │   ├── models/                 # one module per table group; ALL re-exported in models/__init__.py
 │   ├── schemas/                # Pydantic models per resource (+ common.py, related.py)
 │   ├── services/               # business logic, no HTTP concerns except raising helpers from core/exceptions
-│   │   └── assistant/          # agent.py (LangGraph graph, prompt), tools.py (LangChain tools), llm.py (model factory)
+│   │   └── assistant/          # agent.py (LangGraph graph, prompt), tools.py (LangChain tools), llm.py (model factory),
+│   │                           # records.py (list filters), exports.py (file renderers), speech.py (Whisper)
 │   ├── api/router.py           # ROUTERS tuple → /api
 │   ├── api/routes/<feature>.py # one APIRouter per feature
-│   ├── dependencies/           # auth.py (get_current_user, require_roles/admin/manager), pagination.py
+│   ├── dependencies/           # auth.py (get_authenticated_user, get_current_user, require_roles/admin/manager), pagination.py
 │   └── utils/query.py          # search_filter, apply_sort, paginate, get_or_404
 ├── backend/alembic/versions/   # YYYY_MM_DD_HHMM-<rev>_<slug>.py
 ├── backend/scripts/seed.py     # python -m scripts.seed
 ├── backend/tests/              # test_<area>.py, fixtures in conftest.py
 └── frontend/src/
+    ├── app/page.tsx            # public landing page; robots.ts, sitemap.ts, manifest.ts, opengraph-image.tsx
     ├── app/(auth)/…            # login, signup, forgot-password, reset-password
-    ├── app/(app)/<route>/page.tsx   # thin pages; layout.tsx = shell; error.tsx
+    ├── app/(app)/<route>/page.tsx   # thin pages; layout.tsx = shell inside OrganizationGate; error.tsx
+    ├── app/organizations/page.tsx   # organization picker (outside the shell)
     ├── app/auth/callback/route.ts
     ├── proxy.ts
     ├── components/{ui,shared,layout}/
-    ├── features/<module>/      # views, dialogs, tabs, hooks.ts for one module (assistant/ = chat panel)
+    ├── features/<module>/      # views, dialogs, tabs, hooks.ts for one module (assistant/ = chat panel,
+    │                           # organizations/ = gate, switcher, picker; integrations/ = lead sources; landing/)
     ├── hooks/                  # use-current-user, use-list-state, use-resource, use-mobile
-    ├── lib/                    # api-client.ts, supabase/*, utils.ts
+    ├── lib/                    # api-client.ts, active-organization.ts, site.ts, supabase/*, utils.ts
     ├── services/<resource>.ts  # typed API functions
     ├── types/index.ts          # all shared TS types + enum const arrays
     └── utils/format.ts         # Intl formatting helpers
@@ -55,7 +60,7 @@ nexa-crm/
 ## Backend patterns
 
 **Adding a resource (recipe):**
-1. Model in `app/models/<name>.py` using `UUIDPrimaryKeyMixin, TimestampMixin, Base`; `Mapped[...]` annotations; FKs with explicit `ondelete`; indexes on filter columns; many-to-one relationships `lazy="joined"` (or `selectin` for optional links). Add it to `app/models/__init__.py` and `__all__`.
+1. Model in `app/models/<name>.py` using `UUIDPrimaryKeyMixin, TimestampMixin, OrgScopedMixin, Base` (`OrgScopedMixin` from `app/db/tenancy.py` for anything that belongs to an organization, i.e. every CRM table); `Mapped[...]` annotations; FKs with explicit `ondelete`; indexes on filter columns; many-to-one relationships `lazy="joined"` (or `selectin` for optional links). Add it to `app/models/__init__.py` and `__all__`.
 2. Schemas in `app/schemas/<name>.py`: request bodies extend `InputSchema` (strips strings, turns `""` into `None`); responses extend `ORMSchema`; embed related records as `EntityRef` (`{id, name}`) and owners as `ProfileSummary`.
 3. Business logic that is reused or non-trivial goes in `app/services/`.
 4. Router in `app/api/routes/<name>.py`: `APIRouter(prefix="/<names>", tags=[...])`; list endpoint uses `Depends(list_params)` + filters + `apply_sort(stmt, params, SORTABLE, default=...)` + `paginate(...)`; `get_or_404`; `ensure_can_edit` / `owner_for_create` / `check_owner_change`; `require_manager` for deletes; `audit.record(...)` / `audit.apply_changes(...)`; notifications where relevant; `db.commit()` once at the end; `status_code=201` for create, `204` for delete.
@@ -65,7 +70,8 @@ nexa-crm/
 
 **Other rules**
 - Endpoints are **sync `def`** (sync SQLAlchemy). Don't mix in `async def` endpoints that touch the DB.
-- Every endpoint except `/api/health` depends on `get_current_user` (or `require_admin` / `require_manager`).
+- Every CRM endpoint depends on `get_current_user` (or `require_admin` / `require_manager`), which also scopes the session to the request's organization. Account-level endpoints (your profile, your organizations and invitations) use `get_authenticated_user`; `/api/me` uses `get_user_with_optional_org`. Only `/api/health` and the two integration webhooks have no auth dependency.
+- Never add `organization_id` filters by hand and never use `execution_options(all_orgs=True)` in feature code; the session does the scoping (see `app/db/tenancy.py` for the one aggregate-subquery caveat).
 - Validate existence of referenced IDs and raise **400** (`bad_request`) for bad links; **404** (`not_found`) for the path resource; **403** (`forbidden`) for permissions; **409** (`conflict`) for state conflicts; let Pydantic produce **422**. For a failing upstream service (the LLM) use **502** (`bad_gateway`); for a missing configuration **503** (`service_unavailable`).
 - Raise the helpers in `app/core/exceptions.py`; never return error dicts manually. Never leak exception details to clients (the global handler logs and returns a generic 500).
 - Updates: `payload.model_dump(exclude_unset=True)`; drop `None` for non-nullable columns; apply via `audit.apply_changes` so the audit diff is exact.
@@ -85,7 +91,8 @@ nexa-crm/
 ## Frontend patterns
 
 - **Data access:** add API calls to `src/services/<resource>.ts` (use `createCrudService<T, TInput>(path)` for standard REST), then hooks in `features/<module>/hooks.ts` via `createResourceHooks(key, service, { label, related })`. Mutations toast success/error and invalidate related keys automatically. Only use raw `useQuery`/`useMutation` for non-CRUD endpoints (reports, board, notifications, assistant chat).
-- **Never call Axios from components** directly; never use `fetch` for the API.
+- **Never call Axios from components** directly; never use `fetch` for the API. The Axios instance adds `X-Organization-Id` automatically; account-level calls (organizations, invitations addressed to you) pass `withoutOrganization`.
+- **Organization context:** CRM views run inside `OrganizationGate`; read the current organization with `useCurrentOrganization()`. Switch with `enterOrganization(id)` (full page load, so no cached data crosses organizations), never by editing `localStorage` directly.
 - **List pages:** `useListState({ filters, defaultSort, defaultOrder })` → pass `list.params` to `useList`. Use `setFilters` (not two `setFilter` calls) when changing several filters at once.
 - **Pages:** `app/(app)/<route>/page.tsx` exports `metadata` and renders a feature view. Wrap views that use `useSearchParams` in `<Suspense>`. Dynamic routes: `async function Page({ params }: PageProps<"/deals/[id]">) { const { id } = await params; }`.
 - **Forms:** React Hook Form + `zodResolver(schema)`; keep form values as strings and convert on submit; `values:` (not `defaultValues`) when the form edits a loaded record; `Controller` for Select/Combobox/Checkbox; `useWatch` (not `watch`, which breaks React Compiler memoization); submit with `try { await mutation.mutateAsync(...) } catch {}` — the hook already shows the error toast.
@@ -111,7 +118,10 @@ nexa-crm/
 - `Contact.name` property exists only so contacts fit the generic `EntityRef` schema.
 - Notes use `owner_id` for the author so the same `ensure_can_edit` rule applies.
 - `GET /api/pipelines` and `/deals/board` may create the default pipeline (lazy provisioning).
-- `POST /api/integrations/webhooks/{token}` and `/api/integrations/meta/webhook` have no `get_current_user`: their callers are automation tools and Meta. They're secured by the secret URL token / Meta's HMAC signature, and import with `actor=None` (audit `user_id` is null).
+- `POST /api/integrations/webhooks/{token}` and `/api/integrations/meta/webhook` have no `get_current_user`: their callers are automation tools and Meta. They're secured by the secret URL token / Meta's HMAC signature, and import with `actor=None` (audit `user_id` is null). They look the integration up with `all_orgs=True`, then `set_current_org()` to its organization before importing.
+- `Profile.role` isn't a column: it's the membership role for the current request's organization (`org_role`), `None` outside one.
+- `POST /api/organizations` and invitation acceptance call `set_current_org()` themselves: they run without the header but must write org-scoped rows (pipeline, audit entry).
+- Organization errors are 404 even for organizations that exist, so membership can't be probed.
 - `GET /api/notifications*` may create `task_due` notifications (lazy reminders instead of a scheduler).
 - Assistant tools import and call route functions (`app.api.routes.leads.create_lead`, …) from a service. That's deliberate: one code path for UI and chat.
 - Each assistant tool commits on its own, so a chat that fails halfway keeps what it already saved (and says so).

@@ -12,6 +12,7 @@ audit entries and notifications behave the same everywhere:
 
 import csv
 import io
+import math
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -176,9 +177,11 @@ def parse_row(raw: dict, default_platform: SocialPlatform | None = None) -> Pars
     score: int | None = None
     if (raw_score := pick("score")) is not None:
         try:
-            score = max(0, min(100, round(float(raw_score))))
+            number = float(raw_score)
         except ValueError:
-            score = None
+            number = math.nan
+        # "inf", "nan" and the like parse as floats but aren't scores (round(inf) raises OverflowError).
+        score = max(0, min(100, round(number))) if math.isfinite(number) else None
     source = None
     if raw_source := pick("source"):
         try:
@@ -313,6 +316,21 @@ def import_rows(db: Session, rows: list[dict], ctx: ImportContext, *, dry_run: b
 def _external_id_exists(db: Session, platform: SocialPlatform | None, external_id: str) -> bool:
     platform_match = Lead.social_platform.is_(None) if platform is None else Lead.social_platform == platform
     return db.scalar(select(Lead.id).where(platform_match, Lead.external_id == external_id).limit(1)) is not None
+
+
+def meta_lead_imported(db: Session, leadgen_id: str) -> bool:
+    """Whether this Meta lead (Facebook or Instagram) is already in the current organization."""
+    return (
+        db.scalar(
+            select(Lead.id)
+            .where(
+                Lead.social_platform.in_((SocialPlatform.FACEBOOK, SocialPlatform.INSTAGRAM)),
+                Lead.external_id == leadgen_id,
+            )
+            .limit(1)
+        )
+        is not None
+    )
 
 
 def _email_exists(db: Session, email: str) -> bool:

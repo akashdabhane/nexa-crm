@@ -7,7 +7,8 @@ session, and two session events do the rest:
 - every SELECT / UPDATE / DELETE run through the session is limited to the
   current organization, for each org-scoped table it reads, including joins,
   counts and aggregates, relationship loads and `db.get()`;
-- every new org-scoped row gets `organization_id` filled in on flush.
+- every new org-scoped row gets `organization_id` filled in on flush (or, if the
+  session switches to another organization first, at the switch).
 
 Two mechanisms work together, because neither covers everything alone:
 
@@ -53,6 +54,11 @@ class NoOrganizationError(RuntimeError):
 
 
 def set_current_org(db: Session, org_id: uuid.UUID | None) -> None:
+    previous = db.info.get(ORG_KEY)
+    if previous is not None and previous != org_id:
+        # Rows added while the previous organization was selected belong to it, even if they're flushed later
+        # (e.g. the Meta webhook works through several organizations in one session).
+        _stamp_pending(db, previous)
     if org_id is None:
         db.info.pop(ORG_KEY, None)
     else:
@@ -127,11 +133,18 @@ def _scope_statement(state: ORMExecuteState) -> None:
     )
 
 
+def _stamp_pending(session: Session, org_id: uuid.UUID) -> None:
+    for obj in session.new:
+        if isinstance(obj, OrgScopedMixin) and obj.organization_id is None:
+            obj.organization_id = org_id
+
+
 @event.listens_for(Session, "before_flush")
 def _stamp_new_rows(session: Session, _flush_context, _instances) -> None:
     org_id = session.info.get(ORG_KEY)
-    for obj in session.new:
-        if isinstance(obj, OrgScopedMixin) and obj.organization_id is None:
-            if org_id is None:
+    if org_id is None:
+        for obj in session.new:
+            if isinstance(obj, OrgScopedMixin) and obj.organization_id is None:
                 raise NoOrganizationError(f"No organization selected for new {type(obj).__name__}")
-            obj.organization_id = org_id
+        return
+    _stamp_pending(session, org_id)

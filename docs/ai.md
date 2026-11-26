@@ -16,13 +16,17 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 
 | Term | Meaning in this codebase |
 |---|---|
-| **Profile** | App-side user row (`profiles`). `id` = Supabase auth user id (JWT `sub`). Holds `role` and `is_active`. Created just-in-time on the first authenticated request (`app/dependencies/auth.py`). |
-| **Role** | `admin`, `manager`, `sales_rep` (`UserRole` in `app/models/enums.py`). "Manager or admin" = `Profile.is_manager_or_admin`. |
+| **Profile** | App-side user row (`profiles`), global (one per login). `id` = Supabase auth user id (JWT `sub`). Holds `email`, `full_name` and `is_active` (account-wide kill switch); **no role**. Created just-in-time on the first authenticated request (`app/dependencies/auth.py`), belonging to no organization. |
+| **Organization** | A tenant (`organizations`). Every CRM row has `organization_id` (`OrgScopedMixin` in `app/db/tenancy.py`); members only ever see their own organization's data. The active one is sent as the `X-Organization-Id` header. |
+| **Membership** | A user's access to one organization (`memberships`): `role` and `status` (`active`/`disabled`, `MembershipStatus`). Unique per (organization, user). |
+| **Invitation** | An admin's offer of a role to an email address (`invitations`), valid 14 days. Only someone signed in with that (verified) email can accept it. The only way into an existing organization. |
+| **Role** | `admin`, `manager`, `sales_rep` (`UserRole` in `app/models/enums.py`), **per organization**: `get_current_user` copies the membership's role onto `Profile.org_role` for the request, read via `Profile.role`. "Manager or admin" = `Profile.is_manager_or_admin`. |
 | **Owner** | The "assigned user" of a record: `owner_id` on companies, contacts, leads, deals, tasks; the **author** of activities and notes. |
-| **Lead** | An unqualified prospect (`leads`) with free-text `company_name`, `source`, `status`, `score` 0–100. |
+| **Lead** | An unqualified prospect (`leads`) with free-text `company_name`, `source`, `status`, `score` 0–100; imported leads also carry `social_platform`, `social_handle`, `external_id`, `integration_id`. |
+| **Lead source / integration** | A `lead_integrations` row (Settings → Lead sources): a secret webhook URL or a Meta Lead Ads Page connection that creates leads automatically (`app/services/lead_import.py`, `meta_leads.py`). |
 | **Conversion** | `POST /api/leads/{id}/convert` → Contact + (matched or new) Company + optional Deal, in one transaction (`app/services/leads.py`). Sets lead `status=converted` and `converted_*_id`. |
 | **Contact / Company** | A person / an account. A company has many contacts and deals. |
-| **Pipeline / Stage** | Ordered `pipeline_stages` with `position`, default `probability`, and `stage_type` ∈ `open`/`won`/`lost`. One **default pipeline** ("Sales Pipeline": New → Contacted → Qualified → Proposal → Negotiation → Won → Lost) is created lazily by `get_default_pipeline()`. |
+| **Pipeline / Stage** | Ordered `pipeline_stages` with `position`, default `probability`, and `stage_type` ∈ `open`/`won`/`lost`. Each organization has one **default pipeline** ("Sales Pipeline": New → Contacted → Qualified → Proposal → Negotiation → Won → Lost), created with the organization (`create_default_pipeline()`) and, if missing, lazily by `get_default_pipeline()`. |
 | **Deal** | An opportunity. `status` mirrors the stage type (`open`/`won`/`lost`); `closed_at` is set when entering won/lost. |
 | **Weighted value** | `value × probability / 100`. |
 | **Activity** | A logged interaction of type `call`, `meeting` or `email` (`activities`). |
@@ -30,7 +34,7 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 | **Links** | `contact_id`, `company_id`, `lead_id`, `deal_id` — nullable FKs on activities/notes (and tasks, minus lead). Activities/notes need ≥1 link. |
 | **Timeline** | `GET /api/timeline?<one link>=id` — activities + notes merged newest first. A company's timeline includes its contacts' entries. |
 | **Task** | To-do with `due_date`, `priority` (low/medium/high/urgent), `status` (pending/in_progress/completed/cancelled), `due_notified` flag. |
-| **Notification** | Per-user in-app message: `lead_assigned`, `deal_assigned`, `task_assigned`, `task_due`, `deal_won`, `deal_lost`. |
+| **Notification** | Per-user, per-organization in-app message: `lead_assigned`, `deal_assigned`, `task_assigned`, `task_due`, `deal_won`, `deal_lost`. |
 | **Audit log** | Append-only `audit_logs` row: `action` like `deal.stage_changed`, `entity_type`, `entity_id`, JSONB `details` (`name`, `changes: {field: [old, new]}`, `from`/`to`). |
 | **AI assistant** | The chat panel (`features/assistant/assistant-sheet.tsx`) backed by `POST /api/assistant/chat` and the LangGraph agent in `app/services/assistant/`. Turns free text into CRM records and answers questions about stored leads, contacts and companies. Voice input: the mic button records a clip, `POST /api/assistant/transcribe` turns it into text with Whisper (`speech.py`). |
 | **Tool** | A LangChain `@tool` in `app/services/assistant/tools.py` (`search_records`, `get_record_details`, `list_records`, `export_records`, `export_document`, `create_lead`, `update_lead`, `create_company`, `create_contact`, `log_activity`, `add_note`, `create_task`). Returns `(content, artifact)`: a `SavedRecord` for writes, an `ExportOffer` for `list_records`, an `ExportedFile` for the export tools; the other read tools return none. |
@@ -42,15 +46,24 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 
 **Authentication**
 - FastAPI verifies Supabase JWTs itself (`app/core/security.py`): RS256/ES256 via the project JWKS, or legacy HS256 via `SUPABASE_JWT_SECRET`; audience must be `authenticated`; `exp` and `sub` required.
-- A new user becomes **admin if no admin exists**, otherwise `sales_rep`. Deactivated users get 403.
+- A new user gets a profile and **no organization** (and no role). If their (confirmed) email still belongs to an older profile (e.g. an account deleted and re-created in Supabase), the old profile hands the email over and keeps its records; an unconfirmed email gets a placeholder instead. They create an organization (becoming its admin) or accept an invitation. A deactivated account (`profiles.is_active = false`) gets 403 everywhere.
+- `get_authenticated_user` = valid token only (account-level endpoints: `/me`, `/organizations`, `/me/invitations`). `get_current_user` = token **plus** a membership in the `X-Organization-Id` organization: 400 without the header, 404 for an organization you're not in (never reveal whether it exists), 403 for a disabled membership. These responses carry `X-Organization-Error`, which makes the frontend return to `/organizations`.
 - FastAPI never implements registration, login, logout, password reset or email verification — those are Supabase's job, done from the frontend.
 
+**Organizations / tenancy** (`app/db/tenancy.py`, `app/api/routes/organizations.py`)
+- Isolation is enforced on the **DB session**: `set_current_org()` (called by `get_current_user`) makes session events add `organization_id = :org` to every SELECT/UPDATE/DELETE on org-scoped tables and stamp it on new rows. With no organization set, queries match nothing and inserting an org-scoped row raises `NoOrganizationError`.
+- New CRM tables must use `OrgScopedMixin` (and the migration must add `organization_id`). Never filter by organization by hand in feature code, and never pass `execution_options(all_orgs=True)` except in system code that has to find the owning organization first (the public webhooks do).
+- A subquery whose select list is only aggregates isn't scoped automatically: write it with `.select_from(Model)` (see the module docstring).
+- Joining an existing organization only happens by accepting an invitation addressed to the user's verified email (`Profile.verified_email`). Re-inviting refreshes the open invitation; accepting re-activates a disabled membership.
+- An organization always keeps at least one active admin; admins can't change their own role, disable or remove themselves.
+
 **Authorization** (`app/services/permissions.py`, `app/dependencies/auth.py`)
-- Everyone can **read** all CRM records.
+- Every member can **read** all of their organization's CRM records.
 - Reps **edit only records they own**; managers/admins edit any (`ensure_can_edit`).
 - Reps' new records are always owned by themselves; only managers/admins may assign or reassign (`owner_for_create`, `check_owner_change`).
 - **Delete** of companies/contacts/leads/deals: managers/admins only (`require_manager`). Authors may delete their own activities, notes and tasks.
-- Admin only: `PATCH /api/users/{id}`, pipeline create/stage edits. Manager+: audit log, rep-performance report. An admin cannot demote or deactivate themselves.
+- Records can only be assigned to **active members of the current organization** (`ensure_user_exists` → `is_active_member`).
+- Admin only: `PATCH`/`DELETE /api/users/{id}` (membership role, enable/disable, remove), invitations, `PATCH /api/organizations/current`, pipeline create/stage edits, `/api/integrations*` (except the public webhooks). Manager+: audit log, rep-performance report.
 - The frontend mirrors these rules for UX (`useCurrentUser().canEdit/isManager/isAdmin`), but **the backend is the source of truth**.
 
 **Leads & deals**
@@ -61,8 +74,8 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 
 **Side effects**
 - Audit entries and notifications are added to the **same session** and committed with the change (`app/services/audit.py`, `app/services/notifications.py`). Use `audit.apply_changes()` for updates so only real changes are logged.
-- Nobody is notified about their own action. Won/lost notifies the deal owner + all active managers/admins (except the actor).
-- "Task due" notifications are generated **lazily** when a user calls `GET /api/notifications` or `/unread-count` (once per task; reset when `due_date` changes). There is no scheduler.
+- Nobody is notified about their own action. Won/lost notifies the deal owner + the organization's active managers/admins (except the actor).
+- "Task due" notifications are generated **lazily** when a user calls `GET /api/notifications` or `/unread-count`, for open tasks due tomorrow, today or overdue (once per task; reset when `due_date` changes). There is no scheduler.
 
 **Lists**
 - All list endpoints paginate, search, filter and sort **in SQL**. `sort_by` must be whitelisted in a `SORTABLE` dict. Response shape: `{items, total, page, page_size, pages}`; `page_size` ≤ 100.
@@ -98,7 +111,7 @@ For the frontend, also obey `frontend/AGENTS.md`: **this is Next.js 16 — read 
 - **Do not commit, push, or rewrite git history unless asked.**
 - **Do not use Docker** for local work unless asked — the user runs PostgreSQL 18 locally (port 5432) and the backend via `uvicorn` directly.
 - **Do not introduce SQLite** (tests and app rely on PostgreSQL features: `ARRAY`, `JSONB`, `date_trunc`, `FILTER`).
-- **Do not run `python -m scripts.seed`** (any mode) against `nexa_crm`: it holds the user's real CRM data, and `--reset`/`--clear` delete it.
+- **Do not run `python -m scripts.seed`** (any mode) against `nexa_crm` without asking: it holds the user's real CRM data. The script now works only inside its own "Demo Organization" (`--reset` wipes and reseeds that organization, `--clear` deletes it and the demo users) and doesn't touch other organizations, but it still writes to the real database.
 - **Do not load a real Whisper model in tests**: patch `speech._load_model` with a fake, as `backend/tests/test_assistant_voice.py` does.
 - **Do not call a real LLM from tests.** Use the `ScriptedModel` fake in `backend/tests/test_assistant.py`. The Gemini free tier allows only a few requests per day (around 20 for Flash), so do live assistant checks sparingly, and only against the `nexa_crm_test` database.
 - **Do not claim something works without running it.** If you couldn't verify (e.g. a signed-in browser flow), say so.

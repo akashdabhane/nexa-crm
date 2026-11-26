@@ -76,3 +76,23 @@ def test_admin_cannot_demote_self(client, admin):
 def test_invalid_role_rejected(client, admin, rep):
     response = client.patch(f"/api/users/{rep.id}", json={"role": "superuser"}, headers=auth_headers(admin))
     assert response.status_code == 422
+
+
+def test_reregistered_email_takes_over_from_old_profile(client, db, rep):
+    # Same email, new Supabase account (the old one was deleted): used to fail with a 500 on every request.
+    old_email = rep.email
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {make_token(uuid.uuid4(), old_email)}"})
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == old_email
+    db.refresh(rep)
+    assert rep.email == f"{rep.id}@replaced.invalid"
+
+
+def test_unconfirmed_email_cannot_take_over_a_profile_email(client, db, rep):
+    new_id = uuid.uuid4()
+    token = make_token(new_id, rep.email, user_metadata={"full_name": "Imposter", "email_verified": False})
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == f"{new_id}@unknown.local"
+    db.refresh(rep)
+    assert rep.email != f"{rep.id}@replaced.invalid"

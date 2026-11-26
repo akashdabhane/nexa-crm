@@ -39,9 +39,11 @@ Never hard-code brand colors in components — use the tokens.
 Single-series charts use `--chart-1`; two series use `--chart-1` then `--chart-2`, in that fixed order.
 `--chart-3` is below 3:1 contrast on white — only use it with visible labels or a table.
 
-**Dark mode:** `.dark` tokens exist, but there is no theme toggle and no `ThemeProvider`. The app ships light-only
-today. If you add dark mode, add a toggle via `next-themes` and check every hard-coded Tailwind palette class
-(badge tones, activity icons, alerts).
+**Dark mode:** shipped. `next-themes` `ThemeProvider` (`attribute="class"`, `defaultTheme="system"`,
+`disableTransitionOnChange`) in `src/app/providers.tsx` toggles the `.dark` class; `ThemeToggle`
+(`components/layout/theme-toggle.tsx`, a ghost icon button with Light / Dark / System menu) sits in the top bar.
+Every hard-coded Tailwind palette class needs a `dark:` variant: badge tones (`TONES` in `status-badge.tsx`),
+activity icons (`activity-icons.ts`) and alerts already have them — keep it that way for new ones.
 
 ## Typography
 
@@ -60,7 +62,10 @@ One map decides every status/priority/type color: `VALUE_TONES` (value → tone)
 | red | `lost`, `urgent` |
 | amber | `high`, `email` |
 | blue / sky / indigo / violet | `active`, `open`, `in_progress`, `new`, `medium`, `call`, `contacted`, `meeting`, `qualified`, `admin`, `manager` |
-| gray | `inactive`, `unqualified`, `pending`, `cancelled`, `low`, `note`, `sales_rep` |
+| gray | `inactive`, `unqualified`, `pending`, `cancelled`, `low`, `note`, `sales_rep` (and any value not in the map) |
+
+Each tone has light and `dark:` classes. Social platforms use `PlatformBadge` (`components/shared/platform-badge.tsx`,
+icon + label per platform) instead of `StatusBadge`.
 
 Badges always show a **text label**, so color is never the only signal. Activity type icons and colors live in
 `frontend/src/features/activities/activity-icons.ts`; notification icons in `features/notifications/notification-item.tsx`.
@@ -70,7 +75,9 @@ Badges always show a **text label**, so color is never the only signal. Activity
 Tailwind v4 default breakpoints: `sm` 640px · `md` 768px · `lg` 1024px · `xl` 1280px. `useIsMobile()`
 (`src/hooks/use-mobile.ts`) treats < 768px as mobile (the sidebar becomes a sheet).
 
-- **App shell** (`src/app/(app)/layout.tsx`): collapsible icon sidebar (`components/layout/app-sidebar.tsx`, nav in `nav-items.ts`), sticky top bar with sidebar trigger, the **AI Assistant** button (outline, `Sparkles` icon in `text-primary`, label hidden below `sm`) and the notification bell, `main` with `p-4 md:p-6 space-y-6`.
+- **App shell** (`src/app/(app)/layout.tsx`, wrapped in `OrganizationGate`, which shows a pulsing logo until an organization is selected): collapsible icon sidebar (`components/layout/app-sidebar.tsx`, nav in `nav-items.ts`) with the **organization switcher** under the logo and the user menu in the footer; sticky top bar with sidebar trigger, the **AI Assistant** button (outline, `Sparkles` icon in `text-primary`, label hidden below `sm`), the theme toggle and the notification bell; `main` with `p-4 md:p-6 space-y-6`.
+- **Organizations page** (`src/app/organizations/page.tsx`, `features/organizations/organizations-view.tsx`): standalone, outside the shell — cards for each organization, pending invitations (Decline / **Accept & open**) and **Create organization**.
+- **Landing page** (`src/app/page.tsx`, `features/landing/landing-view.tsx`): the public marketing page at `/`.
 - **Auth pages** (`src/app/(auth)/layout.tsx`): split screen — form on the left, indigo brand panel on the right from `lg`.
 - Grids collapse to one column on mobile: KPI tiles `sm:grid-cols-2 xl:grid-cols-4`; record pages `lg:grid-cols-3` (details card + 2-column tabs); filter rows `flex-col sm:flex-row sm:flex-wrap`.
 - Wide tables scroll horizontally inside their card (`overflow-x-auto`); the Kanban board scrolls horizontally with fixed `w-72` columns.
@@ -91,8 +98,8 @@ Tailwind v4 default breakpoints: `sm` 640px · `md` 768px · `lg` 1024px · `xl`
 `frontend/src/components/shared/`: `data-table`, `pagination`, `search-input` (300ms debounce), `filter-select`,
 `states` (`EmptyState`, `ErrorState`, `DetailSkeleton`), `confirm-dialog`, `status-badge`, `entity-combobox`,
 `user-select` (+ `useUsers`), `user-avatar` (initials, stable color), `owner-cell`, `detail-list`, `record-header`,
-`record-tabs`, `form-field`, `kanban-board`, `activity-timeline`, `bar-chart`, `stat-card`.
-`frontend/src/components/layout/`: `app-sidebar`, `topbar` (hosts `AssistantSheet` and `NotificationBell`), `user-menu`, `page-header`, `logo`, `nav-items`.
+`record-tabs`, `form-field`, `kanban-board`, `activity-timeline`, `bar-chart`, `stat-card`, `platform-badge`.
+`frontend/src/components/layout/`: `app-sidebar` (hosts `OrganizationSwitcher`), `topbar` (hosts `AssistantSheet`, `ThemeToggle` and `NotificationBell`), `theme-toggle`, `user-menu`, `page-header`, `logo` (`Logo`, `LogoMark`), `nav-items`.
 `frontend/src/components/ui/`: shadcn primitives — generated; don't hand-edit unless necessary.
 
 ## Charts
@@ -106,7 +113,7 @@ next to any chart whose numbers matter (reports do this). For progress-style com
 ## Accessibility (target: WCAG 2.1 AA)
 
 - Every input has a visible `<Label htmlFor>` via `FormField`; errors are rendered as text under the field.
-- Icon-only buttons need `aria-label` (see pagination, row actions, the notification bell with its unread count, the assistant's Send button and message box).
+- Icon-only buttons need `aria-label` (see pagination, row actions, the notification bell with its unread count, the theme toggle, the organization switcher, the assistant's Send button and message box).
 - Custom controls declare roles (the activity type picker is a `radiogroup` with `aria-checked`); alerts use `role="alert"` / `role="status"`.
 - Keep Radix/shadcn focus styles; don't remove outlines. Hover-revealed actions must also appear on `focus-visible`/`focus-within`.
 - Never encode meaning by color alone (badges have text, overdue dates say "Overdue", charts have labels/tables).

@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -49,18 +49,33 @@ def _create_profile(db: Session, user_id: uuid.UUID, claims: dict) -> Profile:
     A new account belongs to no organization: it can create one, or wait to be
     invited. It sees no CRM data until then.
     """
-    email = (claims.get("email") or f"{user_id}@unknown.local").lower()
+    placeholder = f"{user_id}@unknown.local"
+    email = (claims.get("email") or placeholder).lower()
     metadata = claims.get("user_metadata") or {}
     full_name = metadata.get("full_name") or email.split("@")[0]
 
-    profile = Profile(id=user_id, email=email, full_name=full_name)
-    db.add(profile)
+    db.add(Profile(id=user_id, email=email, full_name=full_name))
     try:
         db.commit()
-    except IntegrityError:
-        # Two simultaneous first requests: the other one created it already.
-        db.rollback()
         return db.get(Profile, user_id)
+    except IntegrityError:
+        db.rollback()
+    # Two simultaneous first requests: the other one created it already.
+    if existing := db.get(Profile, user_id):
+        return existing
+
+    # The email still belongs to an older profile, e.g. an account deleted in Supabase and signed up again.
+    # Supabase gives a confirmed email to one account at a time, so the old profile hands it over (its records
+    # stay attributed to it). An unconfirmed email can't take it over: the new profile gets a placeholder.
+    old = db.scalar(select(Profile).where(func.lower(Profile.email) == email))
+    if old is not None and metadata.get("email_verified") is not False:
+        old.email = f"{old.id}@replaced.invalid"
+        db.flush()
+    else:
+        email = placeholder
+    profile = Profile(id=user_id, email=email, full_name=full_name)
+    db.add(profile)
+    db.commit()
     return profile
 
 

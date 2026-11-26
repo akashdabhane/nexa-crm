@@ -7,11 +7,12 @@ import type { ImportResult, LeadIntegrationInput } from "@/types";
 
 const KEY = "integrations";
 
-export function importSummary({ created, skipped, failed }: ImportResult): string {
+export function importSummary({ created, skipped, failed, has_more }: ImportResult): string {
   const parts = [`${created} lead${created === 1 ? "" : "s"} imported`];
   if (skipped) parts.push(`${skipped} duplicate${skipped === 1 ? "" : "s"} skipped`);
   if (failed) parts.push(`${failed} row${failed === 1 ? "" : "s"} couldn't be read`);
-  return parts.join(", ");
+  const summary = parts.join(", ");
+  return has_more ? `${summary}. More leads are waiting: click Sync now again.` : summary;
 }
 
 export function useIntegrations() {

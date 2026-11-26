@@ -19,8 +19,9 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_jwt_secret: str
 
-    # Comma-separated list, e.g. "http://localhost:3000,https://crm.example.com"
-    cors_origins: str = "https://nexa-crm-eta.vercel.app/"
+    # Comma-separated list, e.g. "http://localhost:3000,https://crm.example.com". Browsers send the origin
+    # without a trailing slash; one typed here is ignored.
+    cors_origins: str = "http://localhost:3000,https://nexa-crm-eta.vercel.app"
 
     # AI assistant (/api/assistant): which chat model answers. "gemini" (Google, needs an API key) or "ollama" (local).
     llm_provider: Literal["gemini", "ollama"] = "gemini"
@@ -63,7 +64,8 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins = (origin.strip().rstrip("/") for origin in self.cors_origins.split(","))
+        return [origin for origin in origins if origin]
 
 
 @lru_cache

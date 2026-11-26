@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -9,9 +10,8 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
-  // Only allow relative redirects to avoid an open redirect.
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  // Only allow paths on this site, to avoid an open redirect.
+  const safeNext = safeRedirectPath(searchParams.get("next"));
 
   if (code) {
     const supabase = await createClient();

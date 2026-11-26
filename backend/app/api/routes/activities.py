@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import bad_request
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.pagination import ListParams, list_params
@@ -12,6 +13,7 @@ from app.models import Activity, Profile
 from app.models.enums import ActivityType
 from app.schemas.activity import ActivityCreate, ActivityRead, ActivityUpdate
 from app.schemas.common import Page
+from app.schemas.related import LINK_FIELDS
 from app.services.permissions import ensure_can_edit
 from app.services.related import validate_related
 from app.utils.query import apply_sort, get_or_404, paginate, search_filter
@@ -83,6 +85,9 @@ def update_activity(
     ensure_can_edit(user, activity)
     data = payload.model_dump(exclude_unset=True)
     validate_related(db, data)
+    # Same rule as on create: an activity always stays linked to at least one record.
+    if not any(data[field] if field in data else getattr(activity, field) for field in LINK_FIELDS):
+        raise bad_request("Link this to at least one contact, company, lead or deal")
     for field in ("type", "subject", "occurred_at"):
         if field in data and data[field] is None:
             data.pop(field)

@@ -9,10 +9,10 @@ checks below have been run and passed.
 
 | Variable | Required | Example / notes |
 |---|---|---|
-| `DATABASE_URL` | ✅ | `postgresql+psycopg://postgres:<password>@localhost:5432/nexa_crm` (local PostgreSQL 18). `postgres://…` and `postgresql://…` are rewritten to `postgresql+psycopg://` by a validator in `app/core/config.py`. |
-| `SUPABASE_URL` | ✅ | `https://<ref>.supabase.co` — used to fetch the JWKS for RS256/ES256 tokens |
-| `SUPABASE_JWT_SECRET` | only for legacy HS256 projects | Supabase → Project Settings → API → JWT secret |
-| `CORS_ORIGINS` | optional | Comma-separated; default `http://localhost:3000` |
+| `DATABASE_URL` | ✅ | `postgresql+psycopg://postgres:<password>@localhost:5432/nexa_crm` (local PostgreSQL 18). `postgres://…` and `postgresql://…` are rewritten to `postgresql+psycopg://` by a validator in `app/core/config.py`. Code default (and `.env.example`): the Compose database, `postgresql+psycopg://nexa:nexa@localhost:5433/nexa_crm` |
+| `SUPABASE_URL` | ✅ | `https://<ref>.supabase.co` — used to fetch the JWKS for RS256/ES256 tokens. No default: the app won't start without it |
+| `SUPABASE_JWT_SECRET` | ✅ must be present, may be empty | A value is only needed for legacy HS256 projects (Supabase → Project Settings → API → JWT secret). The setting has no default, so the variable has to exist (`SUPABASE_JWT_SECRET=` is fine) |
+| `CORS_ORIGINS` | optional | Comma-separated; trailing slashes are stripped (browsers send the origin without one). Default `http://localhost:3000,https://nexa-crm-eta.vercel.app`; `.env.example` has `http://localhost:3000` |
 | `LLM_PROVIDER` | optional | `gemini` (default) or `ollama` — the AI assistant's chat model |
 | `GEMINI_API_KEY` | for the assistant with Gemini | https://aistudio.google.com/apikey. Missing → `/api/assistant/chat` answers 503; the rest of the app works |
 | `GEMINI_MODEL` | optional | Default `gemini-3.5-flash-lite` (much larger free-tier daily quota than Flash) |
@@ -21,6 +21,9 @@ checks below have been run and passed.
 | `WHISPER_MODEL` | optional | Voice input's Whisper model: default `base` (~145 MB, ~1–2 s per question on CPU); `small` is more accurate but ~3x slower. Downloaded to the Hugging Face cache (`~/.cache/huggingface`) on first use, so give containers a persistent cache or expect a one-off download. Empty → `/api/assistant/transcribe` answers 503 |
 | `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE` | optional | Default `cpu` / `int8`. `cuda` + `float16` on a GPU (default CPU leaves the GPU to Ollama) |
 | `WHISPER_LANGUAGE` | optional | Default `en`; empty auto-detects (unreliable on short clips) |
+| `INTEGRATIONS_SECRET` | for Meta Lead Ads | Any long random string; Fernet-encrypts stored Meta Page tokens. Changing it makes saved tokens unreadable |
+| `META_APP_SECRET` / `META_VERIFY_TOKEN` | for the Meta `leadgen` webhook | App secret verifies `X-Hub-Signature-256`; the verify token is the string you type into Meta's webhook setup. Missing → the Meta webhook answers 503 |
+| `META_GRAPH_VERSION` | optional | Default `v26.0` |
 | `TEST_DATABASE_URL` | optional | Defaults to `DATABASE_URL` with the DB name replaced by `nexa_crm_test` |
 
 Settings are loaded by `app/core/config.py` (pydantic-settings). **Process environment variables override `.env`**
@@ -41,7 +44,15 @@ login page shows a "Supabase is not configured" notice instead of crashing.
 ### Supabase dashboard
 
 Authentication → URL Configuration: Site URL `http://localhost:3000`, redirect URL
-`http://localhost:3000/auth/callback` (email confirmation and password reset land there).
+`http://localhost:3000/auth/callback` (email confirmation and password reset land there). Add the deployed
+origin (`https://nexa-crm-eta.vercel.app` and its `/auth/callback`) as well; see `cloud.md`.
+
+### First run
+
+A fresh database has no organizations. After signing in, the app opens **Your organizations**: create one (you
+become its Admin and it gets the default pipeline) or accept an invitation. Upgrading an existing database with
+`alembic upgrade head` moves all existing data and users into one organization named "My Organization" (rename it in
+Settings → Organization), keeping everyone's previous role.
 
 ## Local run (primary workflow — no Docker)
 
@@ -54,7 +65,7 @@ cd backend
 myvenv\Scripts\activate                      # macOS/Linux: source myvenv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
-# python -m scripts.seed                     # demo data, EMPTY databases only; --reset/--clear delete CRM data
+# python -m scripts.seed                     # demo data in a separate "Demo Organization" (never on nexa_crm without asking)
 uvicorn app.main:app --reload                # http://localhost:8000 · docs at /docs
 
 # frontend
@@ -69,7 +80,7 @@ error within seconds; restart `uvicorn` after editing `.env` (the reloader only 
 
 ## Build & bundling
 
-- **Frontend:** `npm run build` (Next.js 16 + Turbopack). `next.config.ts` sets `output: "standalone"`, producing `.next/standalone/server.js` for the Docker image (`frontend/Dockerfile`, multi-stage, `node:22-alpine`, copies `.next/static` and `public`). Pages are client-rendered views inside thin server `page.tsx` files; routes using `useSearchParams` are wrapped in `<Suspense>` so the build can prerender.
+- **Frontend:** `npm run build` (Next.js 16 + Turbopack). `next.config.ts` sets `output: "standalone"`, producing `.next/standalone/server.js` for the Docker image (`frontend/Dockerfile`, multi-stage, `node:22-alpine`, copies `.next/static` and `public`); Vercel builds the same project with its own Next.js runtime. Pages are client-rendered views inside thin server `page.tsx` files; routes using `useSearchParams` are wrapped in `<Suspense>` so the build can prerender. `npm run icons` (`scripts/generate-icons.mjs`, uses `sharp`) regenerates the favicon, Apple and PWA icons from the logo mark; run it only after changing the mark.
 - **Backend:** no build step. `backend/Dockerfile` installs `requirements.txt` and runs `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 - **Optimization stance:** don't optimize prematurely. Existing, sufficient measures: SQL-side pagination/filtering, grouped count queries for company stats (no N+1), joined/selectin eager loading on relationships, TanStack Query `staleTime: 30s` + `keepPreviousData` for lists, 300ms debounced search.
 
@@ -77,7 +88,7 @@ error within seconds; restart `uvicorn` after editing `.env` (the reloader only 
 
 | Layer | Tooling | Status |
 |---|---|---|
-| Backend API + business rules | `pytest` + FastAPI `TestClient` against **real PostgreSQL** (`nexa_crm_test`) | ✅ 84 tests in `backend/tests/` |
+| Backend API + business rules | `pytest` + FastAPI `TestClient` against **real PostgreSQL** (`nexa_crm_test`) | ✅ 147 tests in `backend/tests/` |
 | Frontend static checks | `tsc --noEmit` (strict), ESLint (next core-web-vitals + typescript, incl. React Compiler rules) | ✅ must be clean |
 | Frontend unit / component tests | — | ❌ not set up (don't add Jest/Vitest without asking) |
 | End-to-end | — | ❌ not set up (Playwright is the likely future choice; ask first) |
@@ -86,8 +97,8 @@ error within seconds; restart `uvicorn` after editing `.env` (the reloader only 
 How the backend tests work (`backend/tests/conftest.py`):
 - The schema is created with `Base.metadata.create_all` once per session and dropped afterwards.
 - Each test runs inside a connection-level transaction with `join_transaction_mode="create_savepoint"` and is **rolled back**, so app code can `commit()` freely.
-- Tokens are **HS256-signed locally** with a test secret (`make_token`, `auth_headers`), so the real `get_current_user` dependency runs without Supabase. Fixtures: `admin`, `manager`, `rep`, `other_rep`.
-- Test files by area: `test_auth.py`, `test_companies_contacts.py`, `test_leads.py`, `test_deals.py`, `test_activities_tasks.py`, `test_reports.py`, `test_notifications_audit.py`, `test_config.py` (settings), `test_assistant.py` (AI assistant).
+- Tokens are **HS256-signed locally** with a test secret (`make_token`), so the real `get_current_user` dependency runs without Supabase. `auth_headers(user, org)` adds the `X-Organization-Id` header (defaulting to the user's organization). Fixtures: `org` ("Acme Inc"), and its members `admin`, `manager`, `rep`, `other_rep`; `make_org` / `make_member` build further organizations for isolation tests.
+- Test files by area: `test_auth.py`, `test_organizations.py` (tenancy isolation, invitations, members), `test_companies_contacts.py`, `test_leads.py`, `test_deals.py`, `test_activities_tasks.py`, `test_reports.py`, `test_notifications_audit.py`, `test_integrations.py` (social lead imports), `test_config.py` (settings), `test_assistant.py` (AI assistant), `test_assistant_exports.py` (list/document exports), `test_assistant_voice.py` (transcription with a fake Whisper model).
 - `test_assistant.py` replaces the chat model with `ScriptedModel` (monkeypatching `llm._gemini` / `llm._ollama`), which plays back scripted tool calls and replies. The real LangGraph graph, tools, permissions and DB writes run, but **no request goes to Gemini or Ollama**. Keep it that way for new assistant tests.
 
 Write a test for every new endpoint, business rule, permission rule or bug fix. Assert status codes **and** the
@@ -114,7 +125,7 @@ Never edit a migration that has already been applied/committed — add a new one
 ## Dependency files
 
 - `frontend/package.json` + `package-lock.json`: install with `npm install <pkg>` (only when approved); commit both files.
-- `backend/requirements.txt`: currently a full `pip freeze` saved as **UTF-16** (PowerShell's `>` default), now including the LangChain/LangGraph packages and their transitive deps. pip reads it, but git and GitHub diff it as binary. When regenerating, write UTF-8: `pip freeze | Out-File -Encoding utf8 requirements.txt` (PowerShell) or `pip freeze > requirements.txt` from Git Bash. Keep versions pinned (`==`).
+- `backend/requirements.txt`: currently a full `pip freeze` saved as **UTF-16 LE with CRLF** (PowerShell's `>` default), including the LangChain/LangGraph, export (openpyxl, python-docx, python-pptx) and faster-whisper packages and their transitive deps. pip reads it, but git and GitHub diff it as binary. When regenerating, write UTF-8: `pip freeze | Out-File -Encoding utf8 requirements.txt` (PowerShell) or `pip freeze > requirements.txt` from Git Bash. Keep versions pinned (`==`).
 
 ## Pre-delivery checklist
 

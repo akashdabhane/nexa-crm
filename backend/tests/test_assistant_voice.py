@@ -61,7 +61,7 @@ def test_silence_gives_empty_text(client, rep, whisper):
     assert upload(client, rep).json() == {"text": ""}
 
 
-def test_hints_stay_within_whisper_prompt_budget(db, monkeypatch):
+def test_hints_stay_within_whisper_prompt_budget(db, org, monkeypatch):
     db.add_all([Lead(name=f"Lead number {n:03}") for n in range(30)] + [Contact(first_name="Ada")])
     db.commit()
     monkeypatch.setattr(speech, "HOTWORDS_MAX_CHARS", 60)

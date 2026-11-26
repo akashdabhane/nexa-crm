@@ -28,30 +28,32 @@ organization to open it. Each organization's contacts, companies, leads and deal
   Your organizations; click **Accept & open**. Or click **Create organization** to start your own (you become its Admin).
 - **Admins** invite people in **Settings → Users & roles**, choosing their role. Turning a member's *Active* switch off
   blocks their access to the organization; removing them takes them out (their records stay).
-- Roles apply per organization. Switch organizations from the box at the top of the sidebar.
+- Roles apply per organization: you can be Admin in one and Sales Rep in another. Switch organizations from the box
+  at the top of the sidebar (or **All organizations** in it to go back to the list).
+- Invitations aren't emailed: tell the person to sign in (or sign up) with the invited address and open Your
+  organizations. An invitation is valid for 14 days; inviting the same address again renews it.
 
 | | Admin | Manager | Sales Rep |
 |---|:-:|:-:|:-:|
-| See all records | ✅ | ✅ | ✅ |
+| See all of the organization's records | ✅ | ✅ | ✅ |
 | Create records | ✅ | ✅ | ✅ (owned by themselves) |
 | Edit records | any | any | only their own |
 | Assign records to someone else, delete records | ✅ | ✅ | ❌ (can delete their own activities, notes, tasks) |
 | Sales rep performance report, Audit log | ✅ | ✅ | ❌ |
-| Change user roles, edit pipeline stages | ✅ | ❌ | ❌ |
+| Invite and manage members, rename the organization, edit pipeline stages, connect lead sources | ✅ | ❌ | ❌ |
 
-**To change someone's role:** log in as an Admin → **Settings → Users & roles** → pick the role.
-Team members must log in once before they appear in this list.
+**To change someone's role:** log in as an Admin → **Settings → Users & roles** → pick the role in the members
+table. People appear there once they've accepted an invitation. You can't change your own role or remove yourself,
+and every organization keeps at least one active Admin.
 
 ### Starting from an empty CRM
 
-The demo data has been removed. To clear it again in future (for example after re-running the seed):
+A new organization starts empty, with the default pipeline already set up. Each organization's data is separate, so
+nothing you enter is visible in another organization.
 
-```bash
-cd backend && python -m scripts.seed --clear
-```
-
-This keeps real accounts, their roles and your pipeline stages. **Don't run `python -m scripts.seed`
-again** unless you want the demo data back — it only runs on an empty CRM, and `--reset` wipes your data.
+Demo data (`python -m scripts.seed`) goes into its own **Demo Organization** with placeholder team members; it never
+touches your organizations. `python -m scripts.seed --clear` deletes that demo organization again. Since the seed still
+writes to your real database, only run it if you actually want the demo organization.
 
 ---
 
@@ -60,16 +62,22 @@ again** unless you want the demo data back — it only runs on an empty CRM, and
 Records link to each other, so entering them in this order means the dropdowns are already filled when
 you need them:
 
-1. **Settings → Pipeline** — rename the deal stages to match your sales process (Admin).
-2. **Invite your team** — have them sign up, then set their roles (Admin).
-3. **Companies** — the organisations you sell to.
-4. **Contacts** — people, linked to their company.
-5. **Leads** — prospects who aren't qualified yet.
-6. **Deals** — real opportunities with a value.
-7. Day to day: **Activities, Notes, Tasks** on those records.
+1. **Your organizations → Create organization** — name it after your business (you become its Admin). Rename it
+   later in **Settings → Organization**.
+2. **Settings → Pipeline** — rename the deal stages to match your sales process (Admin).
+3. **Settings → Users & roles → Invite people** — enter each teammate's email and role (Admin). They accept on
+   their Your organizations page.
+4. **Settings → Lead sources** (optional) — connect Facebook/Instagram Lead Ads or a webhook (Admin).
+5. **Companies** — the organisations you sell to.
+6. **Contacts** — people, linked to their company.
+7. **Leads** — prospects who aren't qualified yet.
+8. **Deals** — real opportunities with a value.
+9. Day to day: **Activities, Notes, Tasks** on those records.
 
-Data is entered through the forms in the app, or by describing it to the **AI Assistant** (there is no CSV
-import yet). The API at http://localhost:8000/docs accepts the same data if you ever want to script a bulk import.
+Data is entered through the forms in the app, by describing it to the **AI Assistant**, or — for leads only — with
+**Leads → Import** (CSV) and the lead sources above. There is no CSV import for contacts, companies or deals; the API
+at http://localhost:8000/docs accepts the same data if you ever want to script one (send the `X-Organization-Id`
+header).
 
 ---
 
@@ -77,14 +85,20 @@ import yet). The API at http://localhost:8000/docs accepts the same data if you 
 
 ### Settings
 
-- **Profile** (everyone) — change your display name.
-- **Users & roles** (Admin) — set each user's role, or deactivate someone who has left
-  (they keep their records but can no longer use the app).
+- **Profile** (everyone) — change your display name (it's the same in all your organizations).
+- **Organization** (Admin) — rename the organization.
+- **Users & roles** (Admin) — **Invite people** by email with a role, see and revoke pending invitations; in the
+  members table set each person's role, turn **Active** off to block someone's access to this organization (they keep
+  their records and stay listed), or **Remove** them from the organization (their records stay, still attributed to
+  them). This only affects this organization, never their account or other organizations.
 - **Pipeline** (Admin) — rename each stage and set its **default probability** (the % chance a deal at that
   stage closes). Stages are Open, Won or Lost; the seven default stages are
   New → Contacted → Qualified → Proposal → Negotiation → Won / Lost.
-- **Audit log** (Admin, Manager) — who created, changed (field by field), converted, moved or deleted
-  what, and when.
+- **Lead sources** (Admin) — connections that create leads automatically (see Leads below).
+- **Audit log** (Admin, Manager) — who created, changed (field by field), converted, moved, imported or deleted
+  what, who invited, changed or removed which member, and when.
+
+The top bar also has a **theme** button: Light, Dark or System (follows your device).
 
 ### Companies
 
@@ -188,7 +202,8 @@ The **bell** in the top bar shows unread notifications (checked every 60 seconds
 - one of your deals is marked won or lost by someone else.
 
 You aren't notified about your own actions. Click a notification to open the record; use **Mark all as
-read** on the Notifications page.
+read** on the Notifications page. Notifications belong to an organization: you see the ones for the organization
+you're working in.
 
 ### Dashboard
 
@@ -237,6 +252,13 @@ It looks the records up and answers from them: phone numbers and emails, company
 recent calls, meetings and notes, open tasks and deals. If nothing matches, it says so rather than guessing.
 Questions don't save anything.
 
+**Lists and files.** Ask for a list ("all contacts created by Riya", "qualified leads from the website", "companies in
+Mumbai", "my tasks this week") and it tells you how many there are and names the first few. Under the answer you
+get **Excel**, **Word** and **PowerPoint** buttons that download the full list straight away; or just say "yes" when
+it asks *"Would you like this as an Excel file?"*. For a longer write-up (an account overview, a summary of past
+calls) it offers a Word document, or PowerPoint if you mention a presentation. Ask for Markdown if you want an `.md`
+file. Files are made on the spot and aren't stored anywhere.
+
 **Talk instead of typing.** Click the **microphone** next to the message box (your browser asks for microphone
 access the first time) and speak. While it's listening you'll see moving bars and a timer:
 
@@ -257,6 +279,7 @@ Good to know:
 - It can't create deals, convert leads, or delete anything. Use the normal pages for those.
 - It follows your permissions: a Sales Rep can't change a teammate's lead through chat either. Everything it saves
   shows up in the audit log and sends the usual notifications.
+- It only sees and changes the organization you're working in.
 - It won't make up names or contact details. If something is missing, it asks.
 - If the model is busy or the free daily quota is used up, you'll see a message saying so; anything already saved
   stays saved.

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { FormField } from "@/components/shared/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/client";
 
 import { AuthHeader, FormError } from "./auth-ui";
@@ -37,7 +38,7 @@ export function LoginForm() {
       setError(error.message);
       return;
     }
-    router.replace(searchParams.get("next") ?? "/dashboard");
+    router.replace(safeRedirectPath(searchParams.get("next")));
     router.refresh();
   }
 

@@ -7,8 +7,9 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.models import AuditLog, Lead, Note, Notification
+from app.models.enums import UserRole
 from app.services import lead_import, meta_leads
-from tests.conftest import auth_headers
+from tests.conftest import auth_headers, make_member, make_org
 
 FACEBOOK_TSV = (
     "id\tcreated_time\tcampaign_name\tform_name\tfull_name\temail\tphone_number\twhat's_your_budget?\tplatform\n"
@@ -274,3 +275,60 @@ def test_lead_to_row_flattens_field_data():
     row = meta_leads.lead_to_row({**META_LEAD, "campaign_name": "Fall"})
     assert row["full_name"] == ["Margaret Hamilton"] and row["leadgen_id"] == "9001"
     assert row["platform"] == "ig" and row["Campaign"] == "Fall" and row["Form"] == "Insta form"
+
+
+def test_csv_import_ignores_non_numeric_scores(client, rep):
+    # "inf" parses as a float, and used to crash the whole import with OverflowError.
+    csv_text = "Name,Score\nAlice,inf\nBob,NaN\nCara,-Infinity\nDan,250\n"
+    response = client.post("/api/leads/import", json={"csv_text": csv_text, "score": 30}, headers=auth_headers(rep))
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] == 4
+    leads = {l["name"]: l["score"] for l in client.get("/api/leads", headers=auth_headers(rep)).json()["items"]}
+    assert leads == {"Alice": 30, "Bob": 30, "Cara": 30, "Dan": 100}
+
+
+def test_meta_webhook_keeps_each_organizations_rows_apart(client, db, admin, meta):
+    # Two organizations connected the same Page: each gets its own lead, and that lead's note, audit entry and
+    # notification stay in its organization (they used to be filed under the next organization in the loop).
+    create_meta_integration(client, admin)
+    beta = make_org(db, "Beta")
+    beta_admin = make_member(db, beta, UserRole.ADMIN, "Bea Admin")
+    create_meta_integration(client, beta_admin)
+
+    raw, headers = signed(
+        {"object": "page", "entry": [{"id": "12345", "changes": [{"field": "leadgen", "value": {"page_id": "12345", "leadgen_id": "L-777"}}]}]}
+    )
+    response = client.post("/api/integrations/meta/webhook", content=raw, headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] == 2
+
+    all_orgs = {"all_orgs": True}
+    leads = db.scalars(select(Lead).where(Lead.external_id == "L-777").execution_options(**all_orgs)).all()
+    assert {lead.organization_id for lead in leads} == {admin.test_org_id, beta.id}
+    for lead in leads:
+        note = db.scalar(select(Note).where(Note.lead_id == lead.id).execution_options(**all_orgs))
+        audit = db.scalar(select(AuditLog).where(AuditLog.entity_id == lead.id).execution_options(**all_orgs))
+        notification = db.scalar(select(Notification).where(Notification.entity_id == lead.id).execution_options(**all_orgs))
+        assert note.organization_id == audit.organization_id == notification.organization_id == lead.organization_id
+
+
+def test_meta_sync_limit_leaves_the_rest_for_the_next_sync(client, db, admin, meta, monkeypatch):
+    integration = create_meta_integration(client, admin)
+    monkeypatch.setattr(meta_leads, "MAX_SYNC_LEADS", 2)
+    seen_since = []
+
+    def iter_page_leads(page_id, token, since=None):
+        seen_since.append(since)
+        for n in range(3):
+            yield {**META_LEAD, "id": f"80{n}", "field_data": [{"name": "full_name", "values": [f"Lead {n}"]}]}
+
+    monkeypatch.setattr(meta_leads, "iter_page_leads", iter_page_leads)
+    url = f"/api/integrations/{integration['id']}/sync"
+    first = client.post(url, headers=auth_headers(admin)).json()
+    assert first["created"] == 2 and first["has_more"] is True
+    # The window didn't move, and the leads already imported don't use up the next sync's limit.
+    second = client.post(url, headers=auth_headers(admin)).json()
+    assert second["created"] == 1 and second["has_more"] is False
+    assert seen_since[:2] == [None, None]
+    client.post(url, headers=auth_headers(admin))
+    assert seen_since[2] is not None

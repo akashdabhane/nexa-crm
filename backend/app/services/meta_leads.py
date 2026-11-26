@@ -25,6 +25,7 @@ TIMEOUT = httpx.Timeout(15.0)
 LEAD_FIELDS = "id,created_time,field_data,platform,form_id,ad_name,campaign_name"
 # `platform` isn't available on every API version/lead; retried without it on "unknown field".
 BASIC_LEAD_FIELDS = "id,created_time,field_data,form_id,ad_name,campaign_name"
+# New leads imported by one "Sync now"; the rest come with the next one.
 MAX_SYNC_LEADS = 2000
 
 
@@ -92,18 +93,17 @@ def _paged(url: str, token: str, params: dict) -> Iterator[dict]:
 
 
 def iter_page_leads(page_id: str, token: str, since: datetime | None = None) -> Iterator[dict]:
-    """Every lead of every lead form on the Page, newest forms first, created after `since`."""
+    """Every lead of every lead form on the Page, newest forms first, created after `since`.
+
+    Lazy: the caller stops reading when it has enough (see MAX_SYNC_LEADS), and later pages aren't fetched.
+    """
     params: dict = {"fields": LEAD_FIELDS, "limit": 100}
     if since is not None:
         params["filtering"] = f'[{{"field":"time_created","operator":"GREATER_THAN","value":{int(since.timestamp())}}}]'
-    count = 0
     for form in _paged(_url(f"{page_id}/leadgen_forms"), token, {"fields": "id,name", "limit": 100}):
         for lead in _paged(_url(f"{form['id']}/leads"), token, params):
             lead.setdefault("form_name", form.get("name"))
             yield lead
-            count += 1
-            if count >= MAX_SYNC_LEADS:
-                return
 
 
 def lead_to_row(lead: dict) -> dict:

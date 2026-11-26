@@ -82,6 +82,7 @@ class ImportResult(BaseModel):
     issues: list[ImportIssue]  # first 50 skipped/failed rows
     preview: list[LeadPreview] = []  # dry runs only: the first rows that would be created
     columns: list[str] = []  # CSV only: the header row
+    has_more: bool = False  # Meta sync only: it hit the per-sync limit; "Sync now" again for the rest
 
 
 class CsvImport(InputSchema):

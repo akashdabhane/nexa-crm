@@ -176,15 +176,28 @@ def sync_integration(integration_id: uuid.UUID, user: Profile = Depends(require_
     except SecretError as exc:
         raise service_unavailable(str(exc))
     started = datetime.now(UTC)
+    rows: list[dict] = []
+    has_more = False
     try:
-        rows = [meta_leads.lead_to_row(lead) for lead in meta_leads.iter_page_leads(integration.meta_page_id, token, integration.last_synced_at)]
+        for lead in meta_leads.iter_page_leads(integration.meta_page_id, token, integration.last_synced_at):
+            # Leads already in the CRM don't count toward the limit, so repeated syncs keep making progress.
+            if importer.meta_lead_imported(db, str(lead.get("id") or "")):
+                continue
+            if len(rows) >= meta_leads.MAX_SYNC_LEADS:
+                has_more = True
+                break
+            rows.append(meta_leads.lead_to_row(lead))
     except meta_leads.MetaError as exc:
         integration.last_error = str(exc)[:500]
         db.commit()
         raise bad_gateway(f"Meta: {exc}")
     ctx = _meta_context(db, integration)
     result = importer.import_rows(db, rows, ctx)
-    integration.last_synced_at = started
+    result["has_more"] = has_more
+    # Only move the window forward once everything up to now is in; otherwise the leads past the limit
+    # would never be fetched again.
+    if not has_more:
+        integration.last_synced_at = started
     integration.last_error = None
     audit.record(db, user, "integration.synced", "integration", integration.id, name=integration.name, created=result["created"])
     db.commit()

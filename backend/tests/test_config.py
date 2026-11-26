@@ -15,3 +15,10 @@ def test_database_url_uses_psycopg_driver(url):
     # Render's dashboard gives postgres:// / postgresql:// URLs; they must work unchanged.
     settings = Settings(database_url=url)
     assert settings.database_url == "postgresql+psycopg://u:p@dpg-abc.oregon-postgres.render.com/nexa"
+
+
+def test_cors_origins_ignore_trailing_slashes():
+    # Browsers send "https://app.example.com"; an origin configured as ".../" never matched it.
+    settings = Settings(cors_origins="https://app.example.com/, http://localhost:3000")
+    assert settings.cors_origin_list == ["https://app.example.com", "http://localhost:3000"]
+    assert all(not origin.endswith("/") for origin in Settings().cors_origin_list)

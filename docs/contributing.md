@@ -16,7 +16,7 @@ How humans and AI agents keep the code **and** its context documents correct. Al
 | `rules.md` | Code style, structure, patterns, reasoning steps | A new convention or shared abstraction is introduced |
 | `contributing.md` | This process, git workflow | The workflow changes |
 | `README.md` | User-facing overview, setup, API summary | Features, setup steps or endpoints change |
-| `docs/ARCHITECTURE.md` | Detailed schema, ER diagram, design decisions, AI assistant flow | Schema, major design decisions or the assistant's graph/tools change |
+| `docs/ARCHITECTURE.md` | Detailed schema, ER diagram, design decisions, API surface, multi-tenancy, AI assistant flow | Schema, endpoints, major design decisions or the assistant's graph/tools change |
 | `docs/USER_GUIDE.md` | How end users set up and use each feature | A user-visible feature or workflow changes |
 
 **Rules for maintaining them**
@@ -38,7 +38,8 @@ How humans and AI agents keep the code **and** its context documents correct. Al
 
 ## Commit messages
 
-Use [Conventional Commits](https://www.conventionalcommits.org/) going forward (the first two commits predate this):
+Use [Conventional Commits](https://www.conventionalcommits.org/). Some history doesn't follow it (the first commits,
+and many recent ones titled just `changes`); new commits should:
 
 ```
 <type>(<scope>): <imperative summary, ≤ 72 chars>
@@ -47,7 +48,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) going forward (
 ```
 
 - **Types:** `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `build`, `perf`, `style`.
-- **Scopes:** `backend`, `frontend`, `auth`, `contacts`, `companies`, `leads`, `deals`, `pipeline`, `activities`, `tasks`, `reports`, `notifications`, `audit`, `assistant`, `db`, `docker`, `docs`.
+- **Scopes:** `backend`, `frontend`, `auth`, `organizations`, `contacts`, `companies`, `leads`, `integrations`, `deals`, `pipeline`, `activities`, `tasks`, `reports`, `notifications`, `audit`, `assistant`, `settings`, `seo`, `db`, `docker`, `deploy`, `docs`.
 - Examples:
   - `feat(leads): carry lead notes over on conversion`
   - `fix(backend): add connect_timeout so DB outages fail fast`
@@ -69,5 +70,5 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) going forward (
 ## Never commit
 
 `backend/.env`, `frontend/.env`, `frontend/.env.local`, any root `.env`, the Supabase JWT secret, the Gemini API key,
-database passwords, `backend/myvenv/`, `frontend/node_modules/`, `frontend/.next/`, `__pycache__/`, `.pytest_cache/`.
+`INTEGRATIONS_SECRET`, the Meta app secret, Meta Page tokens, integration webhook URLs, database passwords, `backend/myvenv/`, `frontend/node_modules/`, `frontend/.next/`, `__pycache__/`, `.pytest_cache/`.
 All are covered by the `.gitignore` files — don't weaken them.

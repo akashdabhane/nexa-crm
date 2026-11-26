@@ -27,6 +27,16 @@ def test_activity_requires_a_link(client, rep):
     assert response.status_code == 422
 
 
+def test_activity_update_cannot_remove_every_link(client, rep, contact):
+    activity = log(client, rep, contact_id=contact["id"])
+    url = f"/api/activities/{activity['id']}"
+    assert client.patch(url, json={"contact_id": None}, headers=auth_headers(rep)).status_code == 400
+    # Moving it to another record is fine.
+    moved = client.patch(url, json={"contact_id": None, "company_id": contact["company"]["id"]}, headers=auth_headers(rep))
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["company"]["id"] == contact["company"]["id"] and moved.json()["contact"] is None
+
+
 def test_activity_with_unknown_link_rejected(client, rep):
     response = client.post(
         "/api/activities",

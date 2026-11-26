@@ -273,6 +273,8 @@ export interface ImportResult {
   issues: ImportIssue[];
   preview: LeadPreview[];
   columns: string[];
+  /** Meta sync only: the per-sync limit was reached; syncing again imports the rest. */
+  has_more?: boolean;
 }
 
 export interface CsvImportInput {
