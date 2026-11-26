@@ -6,6 +6,9 @@
   are isolated even though the app code calls `db.commit()`.
 - Tokens are signed locally with an HS256 test secret, so the real
   `get_current_user` dependency is exercised without calling Supabase.
+- The user fixtures are members of one organization (`org`); `auth_headers`
+  sends it as X-Organization-Id. Records added directly through `db` land in
+  that organization too.
 """
 
 import os
@@ -23,7 +26,8 @@ from sqlalchemy.orm import Session  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Base, Profile  # noqa: E402
+from app.db.tenancy import set_current_org  # noqa: E402
+from app.models import Base, Membership, Organization, Profile  # noqa: E402
 from app.models.enums import UserRole  # noqa: E402
 
 settings.supabase_jwt_secret = os.environ["SUPABASE_JWT_SECRET"]
@@ -75,37 +79,58 @@ def make_token(user_id: uuid.UUID, email: str = "user@example.com", **overrides)
     return jwt.encode(claims, settings.supabase_jwt_secret, algorithm="HS256")
 
 
-def auth_headers(user: Profile) -> dict:
-    return {"Authorization": f"Bearer {make_token(user.id, user.email)}"}
+def auth_headers(user: Profile, org: Organization | uuid.UUID | None = None) -> dict:
+    """Bearer token for `user`, working in `org` (default: the organization the fixture made them a member of)."""
+    headers = {"Authorization": f"Bearer {make_token(user.id, user.email)}"}
+    org_id = getattr(org, "id", org) or getattr(user, "test_org_id", None)
+    if org_id is not None:
+        headers["X-Organization-Id"] = str(org_id)
+    return headers
 
 
-def _make_user(db: Session, role: UserRole, name: str) -> Profile:
+def make_org(db: Session, name: str = "Acme Inc") -> Organization:
+    organization = Organization(name=name)
+    db.add(organization)
+    db.commit()
+    return organization
+
+
+def make_member(db: Session, organization: Organization, role: UserRole, name: str) -> Profile:
     user = Profile(
         id=uuid.uuid4(),
         email=f"{name.lower().replace(' ', '.')}.{uuid.uuid4().hex[:6]}@example.com",
         full_name=name,
-        role=role,
     )
     db.add(user)
+    db.flush()
+    db.add(Membership(organization_id=organization.id, user_id=user.id, role=role))
     db.commit()
+    user.test_org_id = organization.id
     return user
 
 
 @pytest.fixture
-def admin(db) -> Profile:
-    return _make_user(db, UserRole.ADMIN, "Ada Admin")
+def org(db) -> Organization:
+    organization = make_org(db)
+    set_current_org(db, organization.id)
+    return organization
 
 
 @pytest.fixture
-def manager(db) -> Profile:
-    return _make_user(db, UserRole.MANAGER, "Max Manager")
+def admin(db, org) -> Profile:
+    return make_member(db, org, UserRole.ADMIN, "Ada Admin")
 
 
 @pytest.fixture
-def rep(db) -> Profile:
-    return _make_user(db, UserRole.SALES_REP, "Riley Rep")
+def manager(db, org) -> Profile:
+    return make_member(db, org, UserRole.MANAGER, "Max Manager")
 
 
 @pytest.fixture
-def other_rep(db) -> Profile:
-    return _make_user(db, UserRole.SALES_REP, "Sam Rep")
+def rep(db, org) -> Profile:
+    return make_member(db, org, UserRole.SALES_REP, "Riley Rep")
+
+
+@pytest.fixture
+def other_rep(db, org) -> Profile:
+    return make_member(db, org, UserRole.SALES_REP, "Sam Rep")

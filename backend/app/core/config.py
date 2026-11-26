@@ -13,10 +13,11 @@ class Settings(BaseSettings):
     app_name: str = "NexaCRM API"
     database_url: str = "postgresql+psycopg://nexa:nexa@localhost:5433/nexa_crm"
 
+
     # Supabase Auth. SUPABASE_URL is used to fetch the JWKS (public signing keys).
     # SUPABASE_JWT_SECRET is only needed for projects still on legacy HS256 keys.
-    supabase_url: str = ""
-    supabase_jwt_secret: str = ""
+    supabase_url: str
+    supabase_jwt_secret: str
 
     # Comma-separated list, e.g. "http://localhost:3000,https://crm.example.com"
     cors_origins: str = "https://nexa-crm-eta.vercel.app/"

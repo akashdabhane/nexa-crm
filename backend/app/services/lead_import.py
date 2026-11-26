@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.models import Lead, LeadIntegration, Note, Profile
 from app.models.enums import LeadSource, LeadStatus, NotificationType, SocialPlatform
 from app.services import audit, notifications
+from app.services.permissions import is_active_member
 
 MAX_ROWS = 5000
 MAX_ISSUES = 50
@@ -375,9 +376,9 @@ def _create_lead(db: Session, parsed: ParsedLead, ctx: ImportContext) -> Lead | 
 
 
 def integration_owner(db: Session, integration: LeadIntegration) -> uuid.UUID | None:
-    """Owner for leads from an integration: its default owner, else whoever set it up (if still active)."""
+    """Owner for leads from an integration: its default owner, else whoever set it up (if still an active member)."""
     for user_id in (integration.default_owner_id, integration.created_by_id):
-        if user_id and (profile := db.get(Profile, user_id)) is not None and profile.is_active:
+        if user_id and is_active_member(db, user_id, integration.organization_id):
             return user_id
     return None
 

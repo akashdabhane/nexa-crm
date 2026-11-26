@@ -1,7 +1,9 @@
 """Social media lead integrations.
 
 Admin endpoints manage the connections. Two endpoints are public by design
-(no Supabase token; the callers are Meta and automation tools):
+(no Supabase token; the callers are Meta and automation tools). They have no
+organization header either: the integration they resolve to decides which
+organization the leads belong to.
 
 - POST /integrations/webhooks/{token}: the integration's secret URL; any tool can send leads.
 - GET/POST /integrations/meta/webhook: Meta's verification handshake and signed `leadgen` events.
@@ -23,6 +25,7 @@ from app.core.config import settings
 from app.core.exceptions import bad_gateway, bad_request, forbidden, not_found, service_unavailable
 from app.core.security import SecretError, decrypt_secret, encrypt_secret
 from app.db.session import get_db
+from app.db.tenancy import set_current_org
 from app.dependencies.auth import require_admin
 from app.models import LeadIntegration, Profile
 from app.models.enums import IntegrationKind, SocialPlatform
@@ -220,9 +223,12 @@ def receive_webhook(
     """
     integration = None
     if len(token) >= 20:
-        integration = db.scalar(select(LeadIntegration).where(LeadIntegration.webhook_token == token))
+        integration = db.scalar(
+            select(LeadIntegration).where(LeadIntegration.webhook_token == token).execution_options(all_orgs=True)
+        )
     if integration is None:
         raise not_found("Integration")
+    set_current_org(db, integration.organization_id)
     if not integration.is_active:
         raise forbidden("This integration is paused")
     if isinstance(payload, dict):
@@ -284,8 +290,11 @@ def receive_meta_webhook(
                     LeadIntegration.meta_page_id == page_id,
                     LeadIntegration.is_active.is_(True),
                 )
+                .execution_options(all_orgs=True)
             ).unique().all()
+            # Several organizations may have connected the same Page: each gets its own copy.
             for integration in integrations:
+                set_current_org(db, integration.organization_id)
                 try:
                     token = decrypt_secret(integration.access_token_encrypted or "")
                     lead = meta_leads.get_lead(leadgen_id, token)

@@ -4,11 +4,12 @@ from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.profile import Profile
 from app.models.related import LeadLinkMixin, RelatedRecordsMixin
 
 
-class Note(UUIDPrimaryKeyMixin, TimestampMixin, RelatedRecordsMixin, LeadLinkMixin, Base):
+class Note(UUIDPrimaryKeyMixin, TimestampMixin, RelatedRecordsMixin, LeadLinkMixin, OrgScopedMixin, Base):
     __tablename__ = "notes"
 
     body: Mapped[str] = mapped_column(Text)

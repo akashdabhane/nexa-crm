@@ -53,7 +53,7 @@ export function ProfileSettings() {
             <Input id="email" value={user.email} disabled />
           </FormField>
           <div className="flex items-center gap-2 text-sm">
-            Role: <StatusBadge value={user.role} label={roleLabel(user.role)} />
+            Role in this organization: <StatusBadge value={user.role ?? ""} label={roleLabel(user.role)} />
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={!isDirty || save.isPending}>

@@ -21,8 +21,14 @@ The **AI Assistant** also needs a model configured in `backend/.env`: a Google G
 ### Accounts and roles
 
 Log in with your Supabase account, or create one at **Sign up** (if email confirmation is on in your Supabase
-project, click the link in the email before logging in). The first account ever to sign in became **Admin**; every new account
-starts as **Sales Rep**.
+project, click the link in the email before logging in). After logging in you land on **Your organizations**: click an
+organization to open it. Each organization's contacts, companies, leads and deals are visible only to its members.
+
+- **New here?** Ask an Admin of your team's organization to invite your email address. The invitation shows up on
+  Your organizations; click **Accept & open**. Or click **Create organization** to start your own (you become its Admin).
+- **Admins** invite people in **Settings → Users & roles**, choosing their role. Turning a member's *Active* switch off
+  blocks their access to the organization; removing them takes them out (their records stay).
+- Roles apply per organization. Switch organizations from the box at the top of the sidebar.
 
 | | Admin | Manager | Sales Rep |
 |---|:-:|:-:|:-:|

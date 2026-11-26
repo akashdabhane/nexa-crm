@@ -10,8 +10,9 @@ from datetime import UTC, date, datetime, time, timedelta
 from sqlalchemy import ColumnElement, and_, case, func, select, true
 from sqlalchemy.orm import Session
 
-from app.models import Activity, Company, Contact, Deal, Lead, PipelineStage, Profile
-from app.models.enums import DealStatus, LeadStatus, StageType
+from app.db.tenancy import current_org
+from app.models import Activity, Company, Contact, Deal, Lead, Membership, PipelineStage, Profile
+from app.models.enums import DealStatus, LeadStatus, MembershipStatus, StageType
 from app.services.pipelines import get_default_pipeline
 
 
@@ -124,7 +125,7 @@ def win_loss(db: Session, period: DateRange) -> dict:
 
 
 def rep_performance(db: Session, period: DateRange) -> list[dict]:
-    """One row per active user. Closed-deal metrics use closed_at; others use created_at."""
+    """One row per active member of the organization. Closed-deal metrics use closed_at; others use created_at."""
     closed_in_period = period.filter(Deal.closed_at)
 
     def per_owner(stmt):
@@ -151,15 +152,25 @@ def rep_performance(db: Session, period: DateRange) -> list[dict]:
         select(Activity.owner_id, func.count()).where(period.filter(Activity.occurred_at)).group_by(Activity.owner_id)
     )
 
+    members = db.execute(
+        select(Profile, Membership.role)
+        .join(Membership, Membership.user_id == Profile.id)
+        .where(
+            Membership.organization_id == current_org(db),
+            Membership.status == MembershipStatus.ACTIVE,
+            Profile.is_active.is_(True),
+        )
+        .order_by(Profile.full_name)
+    ).all()
     result = []
-    for user in db.scalars(select(Profile).where(Profile.is_active.is_(True)).order_by(Profile.full_name)):
+    for user, role in members:
         won, won_value, lost, open_count, open_value = deals.get(user.id, (0, 0, 0, 0, 0))
         new_leads, converted = leads.get(user.id, (0, 0))
         result.append(
             {
                 "user_id": user.id,
                 "name": user.full_name,
-                "role": user.role,
+                "role": role,
                 "deals_won": won,
                 "revenue": float(won_value),
                 "deals_lost": lost,

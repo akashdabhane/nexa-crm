@@ -4,10 +4,11 @@ from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.profile import Profile
 
 
-class Company(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class Company(UUIDPrimaryKeyMixin, TimestampMixin, OrgScopedMixin, Base):
     __tablename__ = "companies"
 
     name: Mapped[str] = mapped_column(String(255), index=True)

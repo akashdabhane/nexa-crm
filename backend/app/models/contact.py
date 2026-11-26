@@ -4,12 +4,13 @@ from sqlalchemy import ARRAY, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.company import Company
 from app.models.enums import ContactStatus
 from app.models.profile import Profile
 
 
-class Contact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class Contact(UUIDPrimaryKeyMixin, TimestampMixin, OrgScopedMixin, Base):
     __tablename__ = "contacts"
 
     first_name: Mapped[str] = mapped_column(String(100))

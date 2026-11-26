@@ -12,6 +12,7 @@ from app.api.routes import (
     leads,
     notes,
     notifications,
+    organizations,
     pipelines,
     reports,
     tasks,
@@ -23,6 +24,7 @@ api_router = APIRouter(prefix="/api")
 ROUTERS = (
     health,
     users,
+    organizations,
     companies,
     contacts,
     leads,

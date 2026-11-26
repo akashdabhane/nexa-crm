@@ -6,10 +6,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.profile import Profile
 
 
-class AuditLog(UUIDPrimaryKeyMixin, Base):
+class AuditLog(UUIDPrimaryKeyMixin, OrgScopedMixin, Base):
     """Append-only record of important actions (who did what to which record)."""
 
     __tablename__ = "audit_logs"

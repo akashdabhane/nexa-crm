@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSkeleton } from "@/components/ui/sidebar";
 import { roleLabel, useCurrentUser } from "@/hooks/use-current-user";
+import { clearActiveOrganization } from "@/lib/active-organization";
 import { createClient } from "@/lib/supabase/client";
 
 export function UserMenu() {
@@ -25,6 +26,7 @@ export function UserMenu() {
 
   async function signOut() {
     await createClient().auth.signOut();
+    clearActiveOrganization();
     queryClient.clear();
     router.replace("/login");
     router.refresh();

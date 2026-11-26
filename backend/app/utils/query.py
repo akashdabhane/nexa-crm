@@ -7,6 +7,7 @@ from sqlalchemy import ColumnElement, Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request, not_found
+from app.db.tenancy import OrgScopedMixin, current_org
 from app.dependencies.pagination import ListParams
 
 
@@ -42,6 +43,7 @@ def paginate(db: Session, stmt: Select, params: ListParams) -> dict:
 
 def get_or_404(db: Session, model: type, record_id: Any, name: str | None = None):
     record = db.get(model, record_id)
-    if record is None:
+    # db.get() can answer from the identity map without a query; re-check the organization.
+    if record is None or (isinstance(record, OrgScopedMixin) and record.organization_id != current_org(db)):
         raise not_found(name or model.__name__)
     return record

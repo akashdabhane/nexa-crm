@@ -5,12 +5,13 @@ from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.enums import TaskPriority, TaskStatus
 from app.models.profile import Profile
 from app.models.related import RelatedRecordsMixin
 
 
-class Task(UUIDPrimaryKeyMixin, TimestampMixin, RelatedRecordsMixin, Base):
+class Task(UUIDPrimaryKeyMixin, TimestampMixin, RelatedRecordsMixin, OrgScopedMixin, Base):
     __tablename__ = "tasks"
 
     title: Mapped[str] = mapped_column(String(255))

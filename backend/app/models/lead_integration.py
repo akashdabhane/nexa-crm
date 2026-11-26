@@ -5,11 +5,12 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.enums import IntegrationKind
 from app.models.profile import Profile
 
 
-class LeadIntegration(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class LeadIntegration(UUIDPrimaryKeyMixin, TimestampMixin, OrgScopedMixin, Base):
     """A connection that brings leads in from a social platform.
 
     - `meta_lead_ads`: a Facebook Page whose Facebook/Instagram lead forms are

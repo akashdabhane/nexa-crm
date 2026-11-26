@@ -52,7 +52,10 @@ Alembic · PostgreSQL · Supabase Auth · LangGraph + LangChain (Google Gemini o
 | Rep performance report, audit log | ✅ | ✅ | ❌ |
 | Manage users/roles & pipeline stages | ✅ | ❌ | ❌ |
 
-The first account to sign in while no Admin exists becomes **Admin**; everyone else starts as Sales Rep.
+**Organizations.** All data belongs to an organization, and members only ever see their own organization's records.
+Signing up gives access to nothing: a new user either creates an organization (and becomes its Admin) or is invited
+by an Admin of an existing one (Settings → Users & roles → Invite people) and accepts the invitation after signing in
+with that email. Roles are per organization, so someone can be Admin in one and Sales Rep in another.
 
 ---
 

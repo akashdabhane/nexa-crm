@@ -5,11 +5,12 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.profile import Profile
 from app.models.related import LeadLinkMixin, RelatedRecordsMixin
 
 
-class Activity(UUIDPrimaryKeyMixin, TimestampMixin, RelatedRecordsMixin, LeadLinkMixin, Base):
+class Activity(UUIDPrimaryKeyMixin, TimestampMixin, RelatedRecordsMixin, LeadLinkMixin, OrgScopedMixin, Base):
     """A logged interaction: call, meeting or email."""
 
     __tablename__ = "activities"

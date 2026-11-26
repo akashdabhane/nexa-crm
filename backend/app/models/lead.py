@@ -5,14 +5,19 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.enums import LeadSource, LeadStatus
 from app.models.profile import Profile
 
 
-class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class Lead(UUIDPrimaryKeyMixin, TimestampMixin, OrgScopedMixin, Base):
     __tablename__ = "leads"
-    # An imported lead (e.g. a Meta leadgen id) is only created once per platform.
-    __table_args__ = (UniqueConstraint("social_platform", "external_id", name="uq_leads_social_platform_external_id"),)
+    # An imported lead (e.g. a Meta leadgen id) is only created once per platform in each organization.
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "social_platform", "external_id", name="uq_leads_organization_platform_external_id"
+        ),
+    )
 
     name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str | None] = mapped_column(String(255), index=True)

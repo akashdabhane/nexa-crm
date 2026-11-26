@@ -1,13 +1,14 @@
-"""Load realistic demo data so the app looks populated.
+"""Load realistic demo data into a separate "Demo Organization".
 
-    python -m scripts.seed           # only if the CRM tables are empty
-    python -m scripts.seed --reset   # wipe CRM data (keeps real user profiles) and reseed
-    python -m scripts.seed --clear   # wipe CRM data and demo users, leaving an empty CRM
+    python -m scripts.seed           # only if the demo organization is empty
+    python -m scripts.seed --reset   # wipe the demo organization's data and reseed it
+    python -m scripts.seed --clear   # delete the demo organization and the demo users
 
-Demo users are placeholder profiles (they can't log in); they own records so
-dashboards and reports have a team to show. Your real Supabase account becomes
-Admin on first login because no demo user is an admin. If you log in first and
-then run `--reset`, some records are assigned to you as well.
+Everything happens inside the demo organization, so no other organization's
+data is ever read or touched. Demo users are placeholder profiles (they can't
+log in); they own records so dashboards and reports have a team to show. To
+look around, have an admin of the demo organization invite you, or add your
+membership by hand. Real accounts that are already members also get records.
 """
 
 import argparse
@@ -19,6 +20,7 @@ from decimal import Decimal
 from sqlalchemy import delete, func, select
 
 from app.db.session import SessionLocal
+from app.db.tenancy import set_current_org
 from app.models import (
     Activity,
     AuditLog,
@@ -26,8 +28,10 @@ from app.models import (
     Contact,
     Deal,
     Lead,
+    Membership,
     Note,
     Notification,
+    Organization,
     Pipeline,
     Profile,
     Task,
@@ -124,14 +128,35 @@ def days_ago(days: float) -> datetime:
     return NOW - timedelta(days=days, hours=random.randint(0, 9), minutes=random.randint(0, 59))
 
 
+DEMO_ORG_ID = uuid.uuid5(uuid.NAMESPACE_DNS, f"organization.{DEMO_DOMAIN}")
+
+
+def enter_demo_org(db, create: bool = True) -> Organization | None:
+    """Scope the session to the demo organization (created if missing)."""
+    org = db.get(Organization, DEMO_ORG_ID)
+    if org is None and create:
+        org = Organization(id=DEMO_ORG_ID, name="Demo Organization")
+        db.add(org)
+        db.flush()
+    if org is not None:
+        set_current_org(db, org.id)
+    return org
+
+
 def ensure_demo_users(db) -> list[Profile]:
     users = []
     for name, role in DEMO_USERS:
         email = f"{name.lower().replace(' ', '.')}@{DEMO_DOMAIN}"
         user = db.scalar(select(Profile).where(Profile.email == email))
         if user is None:
-            user = Profile(id=uuid.uuid5(uuid.NAMESPACE_DNS, email), email=email, full_name=name, role=role)
+            user = Profile(id=uuid.uuid5(uuid.NAMESPACE_DNS, email), email=email, full_name=name)
             db.add(user)
+            db.flush()
+        membership = db.scalar(
+            select(Membership).where(Membership.organization_id == DEMO_ORG_ID, Membership.user_id == user.id)
+        )
+        if membership is None:
+            db.add(Membership(organization_id=DEMO_ORG_ID, user_id=user.id, role=role))
         users.append(user)
     db.flush()
     return users
@@ -144,18 +169,25 @@ def reset(db) -> None:
 
 
 def clear(db) -> None:
-    """Remove all CRM records and demo users. Real accounts and the pipeline setup are kept."""
-    for model in (Notification, AuditLog, Note, Activity, Task, Lead, Deal, Contact, Company):
-        db.execute(delete(model))
+    """Delete the demo organization (with all its records) and the demo users. Nothing else is touched."""
+    if enter_demo_org(db, create=False) is not None:
+        reset(db)
+        db.execute(delete(Organization).where(Organization.id == DEMO_ORG_ID))
     removed = db.execute(delete(Profile).where(Profile.email.like(f"%@{DEMO_DOMAIN}"))).rowcount
-    print(f"Cleared all CRM records and {removed} demo users. Real accounts and pipelines were kept.")
+    print(f"Deleted the demo organization and {removed} demo users. Other organizations were not touched.")
 
 
 def seed(db) -> None:
     users = ensure_demo_users(db)
     # Real accounts that already signed in also get records, so "My tasks" etc. aren't empty.
     real_users = db.scalars(
-        select(Profile).where(Profile.email.not_like(f"%@{DEMO_DOMAIN}"), Profile.is_active.is_(True))
+        select(Profile)
+        .join(Membership, Membership.user_id == Profile.id)
+        .where(
+            Membership.organization_id == DEMO_ORG_ID,
+            Profile.email.not_like(f"%@{DEMO_DOMAIN}"),
+            Profile.is_active.is_(True),
+        )
     ).all()
     reps = users[1:] + list(real_users)
     pipeline = get_default_pipeline(db)
@@ -396,10 +428,11 @@ def main() -> None:
             clear(db)
             db.commit()
             return
+        enter_demo_org(db)
         if args.reset:
             reset(db)
         elif db.scalar(select(func.count()).select_from(Company)):
-            print("Database already has data. Run with --reset to wipe CRM data and reseed.")
+            print("The demo organization already has data. Run with --reset to wipe it and reseed.")
             return
         seed(db)
         db.commit()

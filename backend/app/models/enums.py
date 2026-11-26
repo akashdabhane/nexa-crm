@@ -13,6 +13,11 @@ class UserRole(StrEnum):
     SALES_REP = "sales_rep"
 
 
+class MembershipStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+
 class ContactStatus(StrEnum):
     ACTIVE = "active"
     CUSTOMER = "customer"

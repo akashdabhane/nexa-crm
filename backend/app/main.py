@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.dependencies.auth import ORG_ERROR_HEADER
 
 logger = logging.getLogger("nexa_crm")
 
@@ -15,7 +16,10 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="1.0.0",
-        description="REST API for NexaCRM. Authenticate with a Supabase access token: `Authorization: Bearer <token>`.",
+        description=(
+            "REST API for NexaCRM. Authenticate with a Supabase access token: `Authorization: Bearer <token>`. "
+            "CRM endpoints also need `X-Organization-Id: <organization id>` (see GET /api/organizations)."
+        ),
     )
 
     app.add_middleware(
@@ -24,6 +28,8 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Lets the browser app read it and send the user back to the organization picker.
+        expose_headers=[ORG_ERROR_HEADER],
     )
 
     @app.exception_handler(IntegrityError)

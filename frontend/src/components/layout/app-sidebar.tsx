@@ -17,6 +17,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { OrganizationSwitcher } from "@/features/organizations/organization-switcher";
 
 import { Logo } from "./logo";
 import { navGroups } from "./nav-items";
@@ -31,6 +32,9 @@ export function AppSidebar() {
       <SidebarHeader className="h-14 justify-center px-3">
         <Logo collapsed={state === "collapsed" && !isMobile} />
       </SidebarHeader>
+      <div className="px-2 pt-1">
+        <OrganizationSwitcher />
+      </div>
       <SidebarContent>
         {navGroups.map((group) => (
           <SidebarGroup key={group.label}>

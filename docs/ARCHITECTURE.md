@@ -51,9 +51,15 @@ Guiding priority: **functionality > simplicity > clean code > polish > optimizat
    `aud == "authenticated"`.
 5. The `sub` claim (Supabase user UUID) is looked up in our `profiles` table. On
    the user's first request a profile is created automatically ("just-in-time
-   provisioning"). **If no Admin exists yet, the new user becomes Admin**
-   (so seeded demo users never block it); everyone else starts as Sales
-   Representative and an Admin can change roles in Settings.
+   provisioning"). A new profile belongs to **no organization** and can see
+   no CRM data.
+   CRM endpoints also require an `X-Organization-Id` header: `get_current_user`
+   checks the user has an active **membership** in that organization (404
+   otherwise), takes their **role from the membership**, and scopes the
+   request's DB session to the organization (`app/db/tenancy.py`): every ORM
+   query gets `WHERE organization_id = …` added automatically and new rows are
+   stamped with it. With no organization selected, queries match nothing.
+   Public webhooks resolve the organization from the integration they hit.
 6. Route handlers call **services** (business logic), which use **SQLAlchemy**
    models and write **audit logs / notifications** in the same DB transaction.
 

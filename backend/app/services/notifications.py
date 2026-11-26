@@ -8,8 +8,8 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Deal, Notification, Profile, Task
-from app.models.enums import DealStatus, NotificationType, TaskStatus, UserRole
+from app.models import Deal, Membership, Notification, Profile, Task
+from app.models.enums import DealStatus, MembershipStatus, NotificationType, TaskStatus, UserRole
 
 
 def notify(
@@ -54,10 +54,17 @@ def notify_assignment(db: Session, actor: Profile, record, kind: str, type: Noti
 
 
 def notify_deal_closed(db: Session, actor: Profile, deal: Deal) -> None:
-    """Won/lost deals notify the owner and all managers/admins (except the actor)."""
+    """Won/lost deals notify the owner and the organization's managers/admins (except the actor)."""
     won = deal.status == DealStatus.WON
     managers = db.scalars(
-        select(Profile.id).where(Profile.role.in_([UserRole.ADMIN, UserRole.MANAGER]), Profile.is_active.is_(True))
+        select(Membership.user_id)
+        .join(Profile, Profile.id == Membership.user_id)
+        .where(
+            Membership.organization_id == deal.organization_id,
+            Membership.role.in_([UserRole.ADMIN, UserRole.MANAGER]),
+            Membership.status == MembershipStatus.ACTIVE,
+            Profile.is_active.is_(True),
+        )
     ).all()
     for user_id in {deal.owner_id, *managers}:
         notify(

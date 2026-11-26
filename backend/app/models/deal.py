@@ -6,6 +6,7 @@ from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.company import Company
 from app.models.contact import Contact
 from app.models.enums import DealStatus
@@ -13,7 +14,7 @@ from app.models.pipeline import PipelineStage
 from app.models.profile import Profile
 
 
-class Deal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class Deal(UUIDPrimaryKeyMixin, TimestampMixin, OrgScopedMixin, Base):
     __tablename__ = "deals"
 
     name: Mapped[str] = mapped_column(String(255))

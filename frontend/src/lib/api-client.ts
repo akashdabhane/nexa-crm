@@ -1,8 +1,14 @@
 import axios, { AxiosError } from "axios";
 
+import { clearActiveOrganization, getActiveOrganizationId, leaveToOrganizationPicker } from "@/lib/active-organization";
 import { createClient } from "@/lib/supabase/client";
 
-/** Axios instance for the FastAPI backend. Adds the Supabase access token to every request. */
+const ORGANIZATION_HEADER = "X-Organization-Id";
+
+/** Request config for account-level calls that must not carry the active organization. */
+export const withoutOrganization = { headers: { [ORGANIZATION_HEADER]: "" } };
+
+/** Axios instance for the FastAPI backend. Adds the Supabase access token and the active organization to every request. */
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api",
   headers: { "Content-Type": "application/json" },
@@ -14,6 +20,9 @@ api.interceptors.request.use(async (config) => {
   const { data } = await createClient().auth.getSession();
   const token = data.session?.access_token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // Account-level calls opt out with `withoutOrganization` (an explicit empty header).
+  const organizationId = getActiveOrganizationId();
+  if (organizationId && !config.headers.has(ORGANIZATION_HEADER)) config.headers[ORGANIZATION_HEADER] = organizationId;
 
   // Drop empty filter values so they don't reach the API as "?status=".
   if (config.params) {
@@ -27,7 +36,11 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
+    if (typeof window !== "undefined" && error.response?.headers["x-organization-error"]) {
+      // No organization selected, or you're no longer (active) in it: pick one again.
+      leaveToOrganizationPicker();
+    } else if (error.response?.status === 401 && typeof window !== "undefined") {
+      clearActiveOrganization();
       await createClient().auth.signOut();
       // A full page load (not router.push) so all cached data is dropped.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination

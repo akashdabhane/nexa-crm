@@ -12,7 +12,8 @@ class ProfileRead(BaseModel):
     id: uuid.UUID
     email: str
     full_name: str
-    role: UserRole
+    # Role in the current organization; null when no organization is selected.
+    role: UserRole | None = None
     is_active: bool
     created_at: datetime
 

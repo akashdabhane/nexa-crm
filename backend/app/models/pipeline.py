@@ -4,10 +4,11 @@ from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 from app.models.enums import StageType
 
 
-class Pipeline(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class Pipeline(UUIDPrimaryKeyMixin, TimestampMixin, OrgScopedMixin, Base):
     __tablename__ = "pipelines"
 
     name: Mapped[str] = mapped_column(String(100))
@@ -21,7 +22,7 @@ class Pipeline(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
-class PipelineStage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class PipelineStage(UUIDPrimaryKeyMixin, TimestampMixin, OrgScopedMixin, Base):
     __tablename__ = "pipeline_stages"
 
     pipeline_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pipelines.id", ondelete="CASCADE"), index=True)

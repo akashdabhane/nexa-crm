@@ -10,6 +10,7 @@ from app.models.lead import Lead
 from app.models.lead_integration import LeadIntegration
 from app.models.note import Note
 from app.models.notification import Notification
+from app.models.organization import Invitation, Membership, Organization
 from app.models.pipeline import Pipeline, PipelineStage
 from app.models.profile import Profile
 from app.models.task import Task
@@ -21,10 +22,13 @@ __all__ = [
     "Company",
     "Contact",
     "Deal",
+    "Invitation",
     "Lead",
     "LeadIntegration",
+    "Membership",
     "Note",
     "Notification",
+    "Organization",
     "Pipeline",
     "PipelineStage",
     "Profile",

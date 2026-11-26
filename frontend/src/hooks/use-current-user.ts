@@ -7,7 +7,7 @@ import type { Profile } from "@/types";
 
 export const currentUserKey = ["me"] as const;
 
-/** The signed-in user's profile and role, plus simple permission helpers. */
+/** The signed-in user's profile and role in the active organization, plus simple permission helpers. */
 export function useCurrentUser() {
   const query = useQuery({ queryKey: currentUserKey, queryFn: usersService.me, staleTime: 5 * 60_000 });
   const user = query.data;
@@ -27,5 +27,5 @@ export function useCurrentUser() {
 }
 
 export function roleLabel(role: Profile["role"]) {
-  return { admin: "Admin", manager: "Manager", sales_rep: "Sales Rep" }[role];
+  return role ? { admin: "Admin", manager: "Manager", sales_rep: "Sales Rep" }[role] : "No role";
 }

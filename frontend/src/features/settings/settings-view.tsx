@@ -7,6 +7,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { IntegrationsSettings } from "@/features/integrations/integrations-settings";
 
 import { AuditLogSettings } from "./audit-log-settings";
+import { OrganizationSettings } from "./organization-settings";
 import { PipelineSettings } from "./pipeline-settings";
 import { ProfileSettings } from "./profile-settings";
 import { UsersSettings } from "./users-settings";
@@ -15,6 +16,7 @@ export function SettingsView() {
   const { isAdmin, isManager } = useCurrentUser();
   const tabs = [
     { value: "profile", label: "Profile", content: <ProfileSettings />, show: true },
+    { value: "organization", label: "Organization", content: <OrganizationSettings />, show: isAdmin },
     { value: "users", label: "Users & roles", content: <UsersSettings />, show: isAdmin },
     { value: "pipeline", label: "Pipeline", content: <PipelineSettings />, show: isAdmin },
     { value: "lead-sources", label: "Lead sources", content: <IntegrationsSettings />, show: isAdmin },
@@ -23,7 +25,7 @@ export function SettingsView() {
 
   return (
     <>
-      <PageHeader title="Settings" description="Your profile and workspace configuration." />
+      <PageHeader title="Settings" description="Your profile and this organization's configuration." />
       <Tabs defaultValue="profile">
         <TabsList>
           {tabs.map((tab) => (

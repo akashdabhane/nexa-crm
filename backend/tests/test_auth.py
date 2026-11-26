@@ -38,17 +38,12 @@ def test_wrong_audience_returns_401(client):
     assert response.status_code == 401
 
 
-def test_first_user_is_provisioned_as_admin_then_sales_rep(client, rep):
-    # `rep` exists already (like seeded demo users), but there's no admin yet.
-    first, second = uuid.uuid4(), uuid.uuid4()
-
-    response = client.get("/api/me", headers={"Authorization": f"Bearer {make_token(first, 'first@x.com')}"})
+def test_new_user_is_provisioned_without_an_organization(client, rep):
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {make_token(uuid.uuid4(), 'First@X.com')}"})
     assert response.status_code == 200
-    assert response.json()["role"] == "admin"
+    assert response.json()["role"] is None
     assert response.json()["full_name"] == "Test User"
-
-    response = client.get("/api/me", headers={"Authorization": f"Bearer {make_token(second, 'second@x.com')}"})
-    assert response.json()["role"] == "sales_rep"
+    assert response.json()["email"] == "first@x.com"
 
 
 def test_deactivated_user_gets_403(client, db, rep):

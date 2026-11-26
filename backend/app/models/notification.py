@@ -5,9 +5,10 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, UUIDPrimaryKeyMixin
+from app.db.tenancy import OrgScopedMixin
 
 
-class Notification(UUIDPrimaryKeyMixin, Base):
+class Notification(UUIDPrimaryKeyMixin, OrgScopedMixin, Base):
     __tablename__ = "notifications"
     __table_args__ = (Index("ix_notifications_user_unread", "user_id", "is_read"),)
 

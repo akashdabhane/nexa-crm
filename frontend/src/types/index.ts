@@ -4,16 +4,54 @@ export interface Profile {
   id: string;
   email: string;
   full_name: string;
-  role: UserRole;
+  /** Role in the active organization; null when none is selected. */
+  role: UserRole | null;
   is_active: boolean;
   created_at: string;
 }
+
+/** A member of the active organization (role is always set). */
+export type Member = Profile & { role: UserRole };
 
 /** Compact user embedded in other resources (e.g. a record's owner). */
 export interface UserSummary {
   id: string;
   full_name: string;
   email: string;
+}
+
+export type MembershipStatus = "active" | "disabled";
+
+export interface Organization {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+/** An organization you belong to, with your role in it. */
+export interface MyOrganization extends Organization {
+  role: UserRole;
+  status: MembershipStatus;
+  member_count: number;
+}
+
+/** A pending invitation to the active organization (admin view). */
+export interface Invitation {
+  id: string;
+  email: string;
+  role: UserRole;
+  invited_by: UserSummary | null;
+  created_at: string;
+  expires_at: string;
+}
+
+/** An invitation addressed to you. */
+export interface MyInvitation {
+  id: string;
+  organization: Organization;
+  role: UserRole;
+  invited_by: UserSummary | null;
+  expires_at: string;
 }
 
 /** Minimal reference to a related record (id + display name). */

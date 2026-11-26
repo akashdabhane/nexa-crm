@@ -41,7 +41,7 @@ complicate the core application.
 |---|---|---|
 | **Riley, Sales Representative** | `sales_rep` | Log activities fast (forms or the AI assistant), see "My tasks" and overdue follow-ups, move own deals through the pipeline, convert qualified leads. Must not be able to change or delete teammates' records. |
 | **Max, Sales Manager** | `manager` | See the whole team's pipeline and performance, reassign records, clean up (delete) bad data, review the audit log. |
-| **Ada, Admin / Owner** | `admin` | Everything a manager can do, plus manage users/roles and pipeline stage names/probabilities. The first person to sign in (while no admin exists) becomes Admin. |
+| **Ada, Admin / Owner** | `admin` | Everything a manager can do, plus manage users/roles and pipeline stage names/probabilities. Whoever creates an organization is its first Admin; Admins invite everyone else. |
 | **Developer / interviewer** | — | Read the code and understand auth, data model, business rules and trade-offs quickly. |
 
 ## Problems solved
