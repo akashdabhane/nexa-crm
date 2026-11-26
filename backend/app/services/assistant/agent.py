@@ -12,6 +12,7 @@ The server keeps no chat state: the client sends the whole conversation (includi
 turns) with every message.
 """
 
+import json
 import logging
 from datetime import date, timedelta
 
@@ -29,7 +30,7 @@ from app.core.config import settings
 from app.core.exceptions import bad_gateway
 from app.models import Profile
 from app.models.enums import UserRole
-from app.schemas.assistant import ChatMessage, SavedRecord
+from app.schemas.assistant import ChatMessage, ExportedFile, ExportOffer, RecordFilters, SavedRecord
 from app.services.assistant.llm import MODEL_ERRORS, build_chat_model
 from app.services.assistant.tools import TOOLS
 
@@ -73,6 +74,26 @@ get_record_details with the record's type and id.
 nothing matches, or the field is empty, say so plainly. If several records match, list them briefly or ask which \
 one is meant.
 - Answering a question saves nothing, so don't call any create, update, log or add tool for it.
+
+How to answer questions about many records ("all contacts created by Riya", "qualified leads from the website", \
+"companies in Mumbai", "open deals", "my tasks this week"):
+- Call list_records with the record type and filters. "Created by" someone is created_by; "assigned to", "owned \
+by" or "someone's leads" is owner. Use "me" for the user themselves. A city or country ("located in Mumbai", \
+"contacts from India") is location.
+- Never say nothing matches without having called list_records.
+- Say how many there are and name up to 10 (one per line, with a key detail such as company or status).
+
+Files (Excel, Word, PowerPoint, Markdown):
+- When your answer is a list of records (two or more), end it by asking: "Would you like this as an Excel file?"
+- When your answer is a longer write-up (an account overview, a summary of past calls, a report, a plan, meeting \
+notes), end it by asking: "Would you like this as a Word document?" Offer PowerPoint instead when the user mentions \
+a presentation, meeting or slides.
+- Offer once per answer, and don't offer for a one-line fact, after saving records, or when the user only chats.
+- When the user says yes (or asks for a file outright), make it right away without asking again: export_records \
+with the same record type and filters for a list, or export_document with the content you wrote, in sections, for \
+a write-up. Use the format they named; "yes" alone means the format you offered.
+- Markdown (md) only when the user asks for Markdown or an .md file.
+- After making a file, say in one sentence that it's ready; the app shows the download button.
 
 Reply style: short, friendly plain text (no Markdown). After saving, sum up in one or two sentences what you \
 recorded; the app shows links to the saved records, so don't list IDs. When answering a question, give the \
@@ -126,11 +147,29 @@ def _to_message(message: ChatMessage) -> AnyMessage:
     if message.records:
         saved = "; ".join(f"{r.type} {r.action} “{r.label}” (id {r.id})" for r in message.records)
         text += f"\n\n[Saved in this turn: {saved}]"
+    if offer := message.export_offer:
+        filters = RecordFilters.model_validate(offer.model_dump()).model_dump(mode="json", exclude_none=True)
+        text += f"\n\n[Listed {offer.label}. list_records filters: {json.dumps(filters)}]"
+    if message.files:
+        text += f"\n\n[Files made in this turn: {', '.join(message.files)}]"
     return AIMessage(text)
 
 
+def _artifacts[T](messages: list[AnyMessage], kind: type[T]) -> list[T]:
+    """What this turn's tools produced of one kind (earlier turns arrive as plain messages, without artifacts)."""
+    return [m.artifact for m in messages if isinstance(m, ToolMessage) and isinstance(m.artifact, kind)]
+
+
 def _saved_records(messages: list[AnyMessage]) -> list[SavedRecord]:
-    return [m.artifact for m in messages if isinstance(m, ToolMessage) and isinstance(m.artifact, SavedRecord)]
+    return _artifacts(messages, SavedRecord)
+
+
+def _result(reply: str, messages: list[AnyMessage]) -> dict:
+    """The response: the reply, what was saved, the files made, and the last list shown (unless it was exported)."""
+    files = _artifacts(messages, ExportedFile)
+    offers = _artifacts(messages, ExportOffer)
+    offer = offers[-1] if offers and not files else None
+    return {"reply": reply, "records": _saved_records(messages), "files": files, "export_offer": offer}
 
 
 def _model_error_text(exc: Exception) -> str:
@@ -176,24 +215,25 @@ def chat(db: Session, user: Profile, messages: list[ChatMessage]) -> dict:
             state_messages = state["messages"]
     except GraphRecursionError:
         reply = "I saved what I could, but this took too many steps. Please check the records below."
-        return {"reply": reply, "records": _saved_records(state_messages)}
+        return _result(reply, state_messages)
     except MODEL_ERRORS as exc:  # the model call failed (tools catch their own errors)
         logger.warning("Assistant model error (%s): %s", settings.llm_provider, exc)
         error = _model_error_text(exc)
-        if saved := _saved_records(state_messages):  # already committed: still show them
-            return {"reply": f"I saved the records below, but then hit a problem. {error}", "records": saved}
+        if _saved_records(state_messages):  # already committed: still show them
+            return _result(f"I saved the records below, but then hit a problem. {error}", state_messages)
         raise bad_gateway(error)
 
     answer = state_messages[-1]
-    records = _saved_records(state_messages)
     if answer.text:
-        return {"reply": answer.text, "records": records}
+        return _result(answer.text, state_messages)
     # The model stopped without a word, e.g. a small local model that spent its whole reply budget thinking.
-    if records:
-        return {"reply": "I saved the records below.", "records": records}
+    if _saved_records(state_messages):
+        return _result("I saved the records below.", state_messages)
+    if _artifacts(state_messages, ExportedFile):
+        return _result("Your file is ready.", state_messages)
     stop_reason = answer.response_metadata.get("done_reason") or answer.response_metadata.get("finish_reason")
     if stop_reason in ("length", "MAX_TOKENS"):
         reply = "The AI model ran out of room while thinking and didn't finish. Please try again."
     else:
         reply = "Sorry, I couldn't work out what to save from that. Could you try again or rephrase it?"
-    return {"reply": reply, "records": []}
+    return _result(reply, state_messages)

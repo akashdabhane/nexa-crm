@@ -426,7 +426,8 @@ the assistant adds 502 (the model failed) and 503 (Gemini selected but no API ke
 | Notifications | `GET /api/notifications`, `GET /api/notifications/unread-count` | also generates due-task notifications lazily |
 | | `PATCH /api/notifications/{id}/read`, `POST /api/notifications/read-all` | |
 | Audit log | `GET /api/audit-logs` | **manager/admin**; filters: entity_type, user_id, action, date range |
-| AI assistant | `POST /api/assistant/chat` | body `{ messages: [{role, content, records?}] }` (1–50 messages, the last from the user, ≤ 8,000 chars each) → `{ reply, records }` |
+| AI assistant | `POST /api/assistant/chat` | body `{ messages: [{role, content, records?, export_offer?, files? (names)}] }` (1–50 messages, the last from the user, ≤ 8,000 chars each) → `{ reply, records, files, export_offer }` |
+| | `POST /api/assistant/export` | body `{ filters: {record_type, search?, created_by?, owner?, status?, source?, location?, created_from?, created_to?}, format: "xlsx" \| "docx" \| "pptx" \| "md" }` → `{ filename, format, mime_type, content_base64 }`; 400 for an unknown team member or filter value |
 | | `POST /api/assistant/transcribe` | raw audio body (`audio/webm`, `audio/ogg` or `audio/mp4`, ≤ 10 MB) → `{ text }` (empty if no speech); 503 if voice input is off or the model can't load |
 
 ### What triggers notifications / audit logs
@@ -501,7 +502,7 @@ POST /api/assistant/chat ──▶ chat(db, user, messages)
   replies capped at 6,144 tokens, 10k context); otherwise off (1,024 tokens, 8k context). Earlier
   steps' reasoning is stripped before each model call so it isn't replayed into the context.
   A full message takes ~10 min on a 4 GB GTX 1650; `qwen3:4b-instruct` is the fast alternative.
-- **tools** node: LangGraph `ToolNode` with nine tools. Two read: `search_records` (leads,
+- **tools** node: LangGraph `ToolNode` with twelve tools: the list/export tools described below, and these. Two read: `search_records` (leads,
   contacts and companies by name/email/phone, with phone and email, so "what's X's number?"
   takes one call) and `get_record_details` (one record with its timeline, open tasks, deals and,
   for a company, its contacts). Seven write: `create_lead`, `update_lead`, `create_company`,
@@ -522,7 +523,22 @@ POST /api/assistant/chat ──▶ chat(db, user, messages)
 - The system prompt's rules: search before creating (no duplicates), new prospects become
   **leads**, every described call/email/meeting is logged, promised follow-ups become tasks,
   never invent names or contact details, ask one clarifying question at a time.
-- Not available through chat today: deals, lead conversion, deletes, and reports.
+- Not available through chat today: creating or changing deals, lead conversion, deletes, and reports.
+
+**Lists and files.** `list_records` lists leads, contacts, companies, deals or tasks by filters
+(`search`, `created_by`, `owner` — team members by name, email or "me" — `status`, lead `source`,
+`location` — city, country or address of companies and contacts — `created_from`/`created_to`; `services/assistant/records.py`). The model sees the count and the
+first 15 rows; the response carries an `export_offer` (the filters, count and label). The prompt
+has the model end a list answer with "Would you like this as an Excel file?" and a longer
+write-up with an offer of Word (PowerPoint when the user mentions a presentation). On "yes" it
+calls `export_records` (same filters, full list up to 5,000 rows) or `export_document` (sections
+it wrote: heading, paragraphs, bullets, optional table). Markdown only when asked for.
+`services/assistant/exports.py` renders one small document model to `.xlsx` (openpyxl; CRM text is
+never stored as a formula), `.docx` (python-docx), `.pptx` (python-pptx; 12 rows and 6 columns per
+slide, 120 rows max) or `.md`. Files come back inline as base64 (`files` in the response), so the
+stateless server stores nothing. The chat also shows Excel / Word / PowerPoint buttons under a
+list, which call `POST /api/assistant/export` directly: no model call, no quota used. Earlier
+offers and file names go back to the model in the history, so "yes, export it" reuses the filters.
 
 **Voice input.** The mic button in the chat box records a clip in the browser (`MediaRecorder`,
 Opus in WebM, or MP4 on Safari; `features/assistant/use-voice-recorder.ts`, max 2 minutes) and

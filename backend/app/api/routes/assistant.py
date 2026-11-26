@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import bad_request
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.models import Profile
-from app.schemas.assistant import ChatRequest, ChatResponse, TranscriptionResponse
+from app.schemas.assistant import ChatRequest, ChatResponse, ExportedFile, ExportRequest, TranscriptionResponse
 from app.services import assistant
-from app.services.assistant import speech
+from app.services.assistant import records, speech
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -19,6 +20,15 @@ MAX_AUDIO_BYTES = 10 * 1024 * 1024
 def chat(payload: ChatRequest, user: Profile = Depends(get_current_user), db: Session = Depends(get_db)):
     """Send the conversation; the assistant replies and saves what it learned as CRM records."""
     return assistant.chat(db, user, payload.messages)
+
+
+@router.post("/export", response_model=ExportedFile)
+def export(payload: ExportRequest, user: Profile = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Download a list the assistant offered as a file, without another model call (the chat's export buttons)."""
+    try:
+        return records.export_records(db, user, payload.filters, payload.format)
+    except ValueError as exc:
+        raise bad_request(str(exc)) from exc
 
 
 @router.post(

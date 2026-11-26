@@ -13,6 +13,10 @@ export function useAssistantChat() {
   });
 }
 
+export function useAssistantExport() {
+  return useMutation({ mutationFn: assistantService.exportList });
+}
+
 export function useTranscribe() {
   return useMutation({ mutationFn: assistantService.transcribe });
 }

@@ -178,7 +178,12 @@ def test_chat_answers_questions_from_the_crm(client, db, rep, other_rep, monkeyp
     response = send(client, rep, "Give me the phone number of Vikram Khadse and tell me about his company")
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"reply": "Vikram Khadse: +91 98765 43210", "records": []}  # lookups save nothing
+    assert response.json() == {  # lookups save nothing
+        "reply": "Vikram Khadse: +91 98765 43210",
+        "records": [],
+        "files": [],
+        "export_offer": None,
+    }
 
     found = last_tool_result(model.calls[1])
     assert [(c["name"], c["phone"], c["company"]) for c in found["contacts"]] == [

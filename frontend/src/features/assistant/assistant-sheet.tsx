@@ -5,8 +5,13 @@ import {
   Building2,
   Check,
   CheckSquare,
+  Download,
+  FileCode,
+  FileSpreadsheet,
+  FileText,
   Loader2,
   Mic,
+  Presentation,
   RotateCcw,
   SendHorizontal,
   Sparkles,
@@ -25,10 +30,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Textarea } from "@/components/ui/textarea";
 import { getErrorMessage } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { downloadAssistantFile } from "@/services/assistant";
 import { entityHref } from "@/services/notifications";
-import type { AssistantMessage, AssistantRecord } from "@/types";
+import type { AssistantExportOffer, AssistantFile, AssistantMessage, AssistantRecord, ExportFormat } from "@/types";
 
-import { useAssistantChat, useTranscribe } from "./hooks";
+import { useAssistantChat, useAssistantExport, useTranscribe } from "./hooks";
 import { microphoneErrorMessage, useVoiceRecorder } from "./use-voice-recorder";
 import { VoiceLevel } from "./voice-level";
 
@@ -45,10 +51,20 @@ const RECORD_ICONS: Record<AssistantRecord["type"], LucideIcon> = {
   task: CheckSquare,
 };
 
+const FORMATS: Record<ExportFormat, { name: string; icon: LucideIcon }> = {
+  xlsx: { name: "Excel", icon: FileSpreadsheet },
+  docx: { name: "Word", icon: FileText },
+  pptx: { name: "PowerPoint", icon: Presentation },
+  md: { name: "Markdown", icon: FileCode },
+};
+// The formats the chat offers for a list, as buttons; Markdown only when asked for in words.
+const LIST_FORMATS: ExportFormat[] = ["xlsx", "docx", "pptx"];
+
 const SUGGESTIONS = [
   "Cold-called Priya Shah, CTO at Brightwave. She's interested in a demo next week.",
   "Got a reply to my cold email from Tom Becker at Nordic Freight — he wants pricing by Friday.",
   "Met Lena from Acme at a conference; budget approved for Q1. Follow up on Monday.",
+  "Show me all the leads I created this month.",
 ];
 
 /**
@@ -60,6 +76,7 @@ export function AssistantSheet() {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [draft, setDraft] = useState("");
   const chat = useAssistantChat();
+  const exporter = useAssistantExport();
   const transcription = useTranscribe();
   const recorder = useVoiceRecorder({ onLimit: () => finishVoice("review") });
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -115,13 +132,22 @@ export function AssistantSheet() {
 
   function send(text: string) {
     const content = text.trim();
-    if (!content || chat.isPending) return;
+    if (!content || chat.isPending || exporter.isPending) return;
     const conversation: AssistantMessage[] = [...messages, { role: "user", content }];
     setMessages(conversation);
     setDraft("");
     chat.mutate(conversation, {
       onSuccess: (reply) =>
-        setMessages([...conversation, { role: "assistant", content: reply.reply, records: reply.records }]),
+        setMessages([
+          ...conversation,
+          {
+            role: "assistant",
+            content: reply.reply,
+            records: reply.records,
+            files: reply.files,
+            export_offer: reply.export_offer,
+          },
+        ]),
       onError: (error) => {
         // Put the message back so the user can retry without retyping it.
         setMessages(messages);
@@ -129,6 +155,27 @@ export function AssistantSheet() {
         toast.error(getErrorMessage(error, "The assistant couldn't respond"));
       },
     });
+  }
+
+  /** The export buttons under a list: make the file straight away (no model call), and note it in the chat. */
+  function exportList(offer: AssistantExportOffer, format: ExportFormat) {
+    if (chat.isPending || exporter.isPending) return;
+    const name = FORMATS[format].name;
+    // The offer is the list's filters plus its count and label, which the backend ignores.
+    exporter.mutate(
+      { filters: offer, format },
+      {
+        onSuccess: (file) => {
+          downloadAssistantFile(file);
+          setMessages((current) => [
+            ...current,
+            { role: "user", content: `Yes, export it as ${name}` },
+            { role: "assistant", content: `Here's your ${name} file of ${offer.label}.`, files: [file] },
+          ]);
+        },
+        onError: (error) => toast.error(getErrorMessage(error, `Couldn't make the ${name} file`)),
+      },
+    );
   }
 
   return (
@@ -176,7 +223,8 @@ export function AssistantSheet() {
           </div>
           <SheetDescription>
             Tell me about your calls, emails and new prospects in your own words. I&apos;ll save them to the CRM. You
-            can also ask me about any lead, contact or company.
+            can also ask me about your leads, contacts, companies, deals and tasks, and get lists and summaries as
+            Excel, Word or PowerPoint files.
           </SheetDescription>
         </SheetHeader>
 
@@ -198,13 +246,19 @@ export function AssistantSheet() {
           )}
 
           {messages.map((message, index) => (
-            <ChatBubble key={index} message={message} onOpenRecord={() => setOpen(false)} />
+            <ChatBubble
+              key={index}
+              message={message}
+              onOpenRecord={() => setOpen(false)}
+              onExport={exportList}
+              exporting={chat.isPending || exporter.isPending}
+            />
           ))}
 
-          {chat.isPending && (
+          {(chat.isPending || exporter.isPending) && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
-              Working on it…
+              {exporter.isPending ? "Making your file…" : "Working on it…"}
             </div>
           )}
           <div ref={bottomRef} />
@@ -302,7 +356,7 @@ export function AssistantSheet() {
             <Button
               type="submit"
               size="icon"
-              disabled={recorder.recording ? false : !draft.trim() || chat.isPending || transcribing}
+              disabled={recorder.recording ? false : !draft.trim() || chat.isPending || exporter.isPending || transcribing}
               aria-label="Send"
               title={recorder.recording ? "Send what you said (Enter)" : "Send (Enter)"}
             >
@@ -324,7 +378,18 @@ export function AssistantSheet() {
   );
 }
 
-function ChatBubble({ message, onOpenRecord }: { message: AssistantMessage; onOpenRecord: () => void }) {
+function ChatBubble({
+  message,
+  onOpenRecord,
+  onExport,
+  exporting,
+}: {
+  message: AssistantMessage;
+  onOpenRecord: () => void;
+  onExport: (offer: AssistantExportOffer, format: ExportFormat) => void;
+  exporting: boolean;
+}) {
+  const offer = message.export_offer;
   const isUser = message.role === "user";
   return (
     <div className={cn("flex flex-col gap-2", isUser ? "items-end" : "items-start")}>
@@ -345,7 +410,57 @@ function ChatBubble({ message, onOpenRecord }: { message: AssistantMessage; onOp
           ))}
         </ul>
       )}
+      {message.files && message.files.length > 0 && (
+        <ul className="w-[85%] space-y-1">
+          {message.files.map((file, index) => (
+            <li key={`${file.filename}-${index}`}>
+              <FileDownload file={file} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {offer && offer.total > 0 && (
+        <div className="flex w-[85%] flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Export as</span>
+          {LIST_FORMATS.map((format) => {
+            const { name, icon: Icon } = FORMATS[format];
+            return (
+              <Button
+                key={format}
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs"
+                disabled={exporting}
+                onClick={() => onExport(offer, format)}
+                title={`Download ${offer.label} as ${name}`}
+              >
+                <Icon className="size-3.5 text-primary" />
+                {name}
+              </Button>
+            );
+          })}
+        </div>
+      )}
     </div>
+  );
+}
+
+function FileDownload({ file }: { file: AssistantFile }) {
+  const { name, icon: Icon } = FORMATS[file.format];
+  return (
+    <button
+      type="button"
+      onClick={() => downloadAssistantFile(file)}
+      className="flex w-full items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+      title={`Download ${file.filename}`}
+    >
+      <Icon className="size-3.5 shrink-0 text-primary" />
+      <span className="min-w-0 flex-1 truncate">{file.filename}</span>
+      <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
+        {name}
+        <Download className="size-3.5" />
+      </span>
+    </button>
   );
 }
 

@@ -5,7 +5,8 @@ notifications are identical, and every save is committed immediately.
 
 The DB session and current user arrive through the LangGraph run config (`configurable`), which LangChain injects
 into the `config` parameter and hides from the model. Tools return `(content, artifact)`: the content is JSON for
-the model, the artifact is the `SavedRecord` the chat UI links to.
+the model, the artifact is what the chat UI shows for it: the `SavedRecord` it links to, the `ExportOffer` of a
+list (its download buttons) or the `ExportedFile` to download.
 """
 
 import json
@@ -16,7 +17,7 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
-from pydantic import Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy.orm import Session
 
@@ -24,15 +25,17 @@ from app.api.routes import activities, companies, contacts, leads, notes, tasks,
 from app.models import Company, Contact, Deal, Lead, Profile, Task
 from app.models.enums import ActivityType, LeadSource, TaskPriority, TaskStatus
 from app.schemas.activity import ActivityCreate
-from app.schemas.assistant import SavedRecord
+from app.schemas.assistant import ExportFormat, ListableType, RecordFilters, SavedRecord
 from app.schemas.company import CompanyCreate
 from app.schemas.contact import ContactCreate
 from app.schemas.lead import LeadCreate, LeadUpdate
 from app.schemas.note import NoteCreate
 from app.schemas.task import TaskCreate
+from app.services.assistant import records
+from app.services.assistant.exports import Document, WrittenSection, render
 from app.utils.query import get_or_404, search_filter
 
-ToolResult = tuple[str, SavedRecord | None]
+ToolResult = tuple[str, BaseModel | None]
 
 # Lead statuses the model may set ("converted" only happens through the convert action).
 OpenLeadStatus = Literal["new", "contacted", "qualified", "unqualified"]
@@ -60,7 +63,7 @@ def _error_text(exc: Exception) -> str:
     return str(exc)
 
 
-def _run(config: RunnableConfig, action: Callable[[Session, Profile], tuple[dict, SavedRecord | None]]) -> ToolResult:
+def _run(config: RunnableConfig, action: Callable[[Session, Profile], tuple[dict, BaseModel | None]]) -> ToolResult:
     """Run a tool body with the request's DB session and user. Errors go back to the model as data."""
     db: Session = config["configurable"]["db"]
     user: Profile = config["configurable"]["user"]
@@ -404,9 +407,130 @@ def create_task(
     return _run(config, action)
 
 
+ListType = Annotated[ListableType, "What kind of records"]
+Search = Annotated[str | None, "Only records whose name (or email, phone, company) contains this"]
+CreatedBy = Annotated[str | None, "Name or email of the team member who created them; 'me' for the user"]
+Owner = Annotated[str | None, "Name or email of the team member they're assigned to; 'me' for the user"]
+Status = Annotated[
+    str | None,
+    "Status. Leads: new, contacted, qualified, unqualified, converted. Contacts: active, customer, inactive. "
+    "Deals: open, won, lost. Tasks: pending, in_progress, completed, cancelled. Companies have none.",
+]
+Source = Annotated[
+    str | None, "Leads only: website, referral, advertisement, social_media, email, cold_call or other"
+]
+Location = Annotated[
+    str | None, "Companies and contacts only: a city, country or address, e.g. 'Mumbai' for 'located in Mumbai'"
+]
+CreatedFrom = Annotated[str | None, "Created on or after this date, YYYY-MM-DD"]
+CreatedTo = Annotated[str | None, "Created on or before this date, YYYY-MM-DD"]
+
+
+@tool(response_format="content_and_artifact")
+def list_records(
+    record_type: ListType,
+    config: RunnableConfig,
+    search: Search = None,
+    created_by: CreatedBy = None,
+    owner: Owner = None,
+    status: Status = None,
+    source: Source = None,
+    location: Location = None,
+    created_from: CreatedFrom = None,
+    created_to: CreatedTo = None,
+) -> ToolResult:
+    """List the leads, contacts, companies, deals or tasks that match some filters, e.g. "all contacts created by
+    Riya", "qualified leads from the website", "companies in Mumbai", "open deals", "tasks created this week".
+    Returns how many match and the first rows. Use search_records instead to find one person or company by name."""
+
+    def action(db: Session, user: Profile):
+        filters = RecordFilters(
+            **_given(
+                record_type=record_type,
+                search=search,
+                created_by=created_by,
+                owner=owner,
+                status=status,
+                source=source,
+                location=location,
+                created_from=created_from,
+                created_to=created_to,
+            )
+        )
+        result, offer = records.list_records(db, user, filters)
+        if result["total"] > 1:
+            result["next_step"] = (
+                "Tell the user how many there are and name a few. Then ask whether they'd like the list as an "
+                "Excel file (export_records with these same filters)."
+            )
+        return result, offer
+
+    return _run(config, action)
+
+
+@tool(response_format="content_and_artifact")
+def export_records(
+    format: Annotated[ExportFormat, "xlsx (Excel), docx (Word), pptx (PowerPoint) or md (Markdown)"],
+    record_type: ListType,
+    config: RunnableConfig,
+    search: Search = None,
+    created_by: CreatedBy = None,
+    owner: Owner = None,
+    status: Status = None,
+    source: Source = None,
+    location: Location = None,
+    created_from: CreatedFrom = None,
+    created_to: CreatedTo = None,
+) -> ToolResult:
+    """Make a downloadable file of every record that matches the filters (the same filters as list_records), e.g.
+    an Excel sheet of all contacts created by Riya. Only when the user asked for a file or said yes to one."""
+
+    def action(db: Session, user: Profile):
+        filters = RecordFilters(
+            **_given(
+                record_type=record_type,
+                search=search,
+                created_by=created_by,
+                owner=owner,
+                status=status,
+                source=source,
+                location=location,
+                created_from=created_from,
+                created_to=created_to,
+            )
+        )
+        file = records.export_records(db, user, filters, format)
+        return {"file": file.filename, "ready": True}, file
+
+    return _run(config, action)
+
+
+@tool(response_format="content_and_artifact")
+def export_document(
+    format: Annotated[ExportFormat, "docx (Word), pptx (PowerPoint), md (Markdown), or xlsx (Excel, tables only)"],
+    title: Annotated[str, "Document title"],
+    sections: Annotated[list[WrittenSection], "The content, in order. In PowerPoint each section becomes a slide."],
+    config: RunnableConfig,
+    subtitle: Annotated[str | None, "A line under the title"] = None,
+) -> ToolResult:
+    """Make a downloadable document from content you wrote: a summary, account overview, report, meeting notes or
+    plan, as Word, PowerPoint or Markdown. Only when the user asked for a file or said yes to one. Use only facts
+    from the CRM tools or the user."""
+
+    def action(_db: Session, _user: Profile):
+        content = [s.model_dump() if isinstance(s, WrittenSection) else s for s in sections]
+        file = render(Document(title=title, subtitle=subtitle, sections=content), format)
+        return {"file": file.filename, "ready": True}, file
+
+    return _run(config, action)
+
+
 TOOLS = [
     search_records,
     get_record_details,
+    list_records,
+    export_records,
+    export_document,
     create_lead,
     update_lead,
     create_company,

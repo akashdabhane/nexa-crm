@@ -47,6 +47,7 @@ SQLAlchemy 2.1) have APIs that differ from older tutorials.
 | JWT | `PyJWT[crypto]` (`PyJWKClient` for JWKS) + `cryptography` | 2.15.0 / 50.0.1 |
 | Env loading | `python-dotenv` (via pydantic-settings `.env`) | 1.2.3 |
 | AI assistant (`app/services/assistant/`) | `langgraph` (agent graph, `ToolNode`), `langchain` + `langchain-core` (tools, chat models), `langchain-google-genai` (Gemini, pulls in `google-genai`), `langchain-ollama` (+ `ollama` client) | 1.2.18 / 1.4.7 + 1.7.1 / 4.4.2 / 1.1.0 + 0.6.3 |
+| Assistant file exports (`app/services/assistant/exports.py`) | `openpyxl` (Excel), `python-docx` (Word), `python-pptx` (PowerPoint; pulls in `pillow`, `XlsxWriter`); `lxml` for both Office libraries | 3.1.5 / 1.2.0 / 1.0.2 |
 | Voice input (`app/services/assistant/speech.py`) | `faster-whisper` (OpenAI Whisper on CTranslate2; pulls in `ctranslate2`, `onnxruntime` for the silence filter, `huggingface_hub` for the model download, `tokenizers`, `numpy`). `av` (PyAV) is pinned to 18.1: 19 dropped an argument faster-whisper 1.2.1 still passes | 1.2.1 / av 18.1.0 |
 | LLM providers | Google Gemini API (default `gemini-3.5-flash-lite`, fallback `gemini-3.5-flash`) or a local Ollama server (default `qwen3:4b`), chosen by `LLM_PROVIDER` | — |
 | Tests | `pytest`, `httpx` (FastAPI `TestClient`) | 9.1.1 / 0.28.1 |

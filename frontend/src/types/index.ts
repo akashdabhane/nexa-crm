@@ -467,13 +467,46 @@ export interface AssistantRecord {
   link_id: string | null;
 }
 
+export type ExportFormat = "xlsx" | "docx" | "pptx" | "md";
+
+/** Which records an assistant list shows, as the backend's `RecordFilters`. */
+export interface AssistantRecordFilters {
+  record_type: "lead" | "contact" | "company" | "deal" | "task";
+  search?: string | null;
+  created_by?: string | null;
+  owner?: string | null;
+  status?: string | null;
+  source?: string | null;
+  location?: string | null;
+  created_from?: string | null;
+  created_to?: string | null;
+}
+
+/** A list the assistant showed, which the chat offers to download as a file. */
+export interface AssistantExportOffer extends AssistantRecordFilters {
+  total: number;
+  label: string;
+}
+
+/** A file the assistant made, sent inline as base64. */
+export interface AssistantFile {
+  filename: string;
+  format: ExportFormat;
+  mime_type: string;
+  content_base64: string;
+}
+
 export interface AssistantMessage {
   role: "user" | "assistant";
   content: string;
   records?: AssistantRecord[];
+  files?: AssistantFile[];
+  export_offer?: AssistantExportOffer | null;
 }
 
 export interface AssistantReply {
   reply: string;
   records: AssistantRecord[];
+  files: AssistantFile[];
+  export_offer: AssistantExportOffer | null;
 }
